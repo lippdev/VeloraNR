@@ -14,6 +14,8 @@ const ACCENT_HOVER: u32 = 0x3674ce;
 const BORDER: u32 = 0x43566c;
 const FOCUS: u32 = 0xaecbff;
 const SIDEBAR: i32 = 325;
+const BITRATES: [u32; 9] = [1, 5, 10, 15, 20, 30, 50, 80, 100];
+const DEFAULT_BITRATE: u32 = 15;
 use gpui::{prelude::*, *};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::PathBuf, time::Duration};
@@ -21,7 +23,7 @@ unsafe extern "C" {
     fn portal_login(media: *mut c_void, pin: *const std::ffi::c_char);
     fn portal_new(parent: isize, log: *const u16) -> *mut c_void;
     fn portal_free(media: *mut c_void);
-    fn portal_open(media: *mut c_void, file: *const u16, wake: bool) -> i32;
+    fn portal_open(media: *mut c_void, file: *const u16, wake: bool, bitrate_kbps: u32) -> i32;
     fn portal_stop(media: *mut c_void);
     fn portal_tick(media: *mut c_void, width: i32, show: bool) -> i32;
     fn portal_quality(media: *mut c_void, values: *const f32, count: usize) -> bool;
@@ -54,11 +56,14 @@ enum Action {
     Stop,
     Wake,
     Change(usize, f32),
+    Bitrate(i32),
 }
 struct Portal {
     media: Media,
     profile: PathBuf,
     quality_file: PathBuf,
+    bitrate_file: PathBuf,
+    bitrate: u32,
     fields: Vec<quality::Field>,
     values: Vec<f32>,
     page: Page,
@@ -90,6 +95,12 @@ impl Portal {
             .unwrap_or_default();
         let profile = root.join("console.dat");
         let quality_file = root.join("quality.json");
+        let bitrate_file = root.join("bitrate.txt");
+        let bitrate = std::fs::read_to_string(&bitrate_file)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+            .filter(|value| BITRATES.contains(value))
+            .unwrap_or(DEFAULT_BITRATE);
         let fields = quality::schema();
         let mut values: Vec<_> = fields.iter().map(|f| f.initial).collect();
         let media = Media(unsafe {
@@ -163,6 +174,8 @@ impl Portal {
             media,
             profile,
             quality_file,
+            bitrate_file,
+            bitrate,
             fields,
             values,
             page: Page::Session,
@@ -272,13 +285,25 @@ impl Portal {
                     self.page = Page::Pair;
                     self.focus.focus(w);
                     self.notice = "Pareie o console neste aplicativo.".into();
-                } else if unsafe { portal_open(self.media.0, file.as_ptr(), wake) } != 0 {
+                } else if unsafe {
+                    portal_open(self.media.0, file.as_ptr(), wake, self.bitrate * 1000)
+                } != 0
+                {
                     self.notice = "Falha ao acessar o PS5.".into()
                 } else if wake {
                     self.notice = "Comando enviado.".into()
                 }
             }
             Action::Stop => unsafe { portal_stop(self.media.0) },
+            Action::Bitrate(step) => {
+                let current = BITRATES.binary_search(&self.bitrate).unwrap_or(3);
+                let index = (current as i32 + step).clamp(0, BITRATES.len() as i32 - 1);
+                let requested = BITRATES[index as usize];
+                match std::fs::write(&self.bitrate_file, requested.to_string()) {
+                    Ok(()) => self.bitrate = requested,
+                    Err(err) => self.notice = format!("Falha ao salvar o bitrate: {err}"),
+                }
+            }
             Action::Change(i, d) => {
                 let f = &self.fields[i];
                 let old = self.values[i];
@@ -535,6 +560,20 @@ impl Render for Portal {
                             _ => "Configure seu PS5 para começar",
                         }),
                 );
+                col = col.child(div().mt_2().text_sm().child("Bitrate solicitado"));
+                if matches!(self.status, 1..=3) {
+                    col = col.child(format!("{} Mbps", self.bitrate));
+                } else {
+                    let mut controls = div().flex().items_center().gap_2();
+                    if self.bitrate > BITRATES[0] {
+                        controls = controls.child(Self::button(6, "−", Action::Bitrate(-1), cx));
+                    }
+                    controls = controls.child(format!("{} Mbps", self.bitrate));
+                    if self.bitrate < BITRATES[BITRATES.len() - 1] {
+                        controls = controls.child(Self::button(7, "+", Action::Bitrate(1), cx));
+                    }
+                    col = col.child(controls);
+                }
                 if matches!(self.status, 1..=3) {
                     col = col.child(Self::button(1, "Desconectar", Action::Stop, cx));
                 } else if paired {
