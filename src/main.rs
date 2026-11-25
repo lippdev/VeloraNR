@@ -2,6 +2,18 @@
 mod discovery;
 mod pairing;
 mod quality;
+
+const BACKGROUND: u32 = 0x101820;
+const PANEL: u32 = 0x1b2835;
+const TEXT: u32 = 0xedf2fa;
+const MUTED: u32 = 0xaab9ca;
+const BUTTON: u32 = 0x26374a;
+const BUTTON_HOVER: u32 = 0x354e67;
+const ACCENT: u32 = 0x2761b5;
+const ACCENT_HOVER: u32 = 0x3674ce;
+const BORDER: u32 = 0x43566c;
+const FOCUS: u32 = 0xaecbff;
+const SIDEBAR: i32 = 325;
 use gpui::{prelude::*, *};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::PathBuf, time::Duration};
@@ -58,6 +70,12 @@ struct Portal {
     focus: FocusHandle,
     discovery: discovery::State,
 }
+impl Page {
+    fn is_dialog(self) -> bool {
+        matches!(self, Self::Pair | Self::Login)
+    }
+}
+
 impl Portal {
     fn new(window: &Window, cx: &mut Context<Self>) -> Self {
         let handle = HasWindowHandle::window_handle(window).unwrap();
@@ -114,8 +132,13 @@ impl Portal {
                 if this
                     .update(cx, |p, cx| {
                         if !p.media.0.is_null() {
-                            let state =
-                                unsafe { portal_tick(p.media.0, 325, p.page != Page::Pair) };
+                            let state = unsafe {
+                                portal_tick(
+                                    p.media.0,
+                                    SIDEBAR,
+                                    !p.page.is_dialog() && matches!(p.status, 1..=3),
+                                )
+                            };
                             if state != p.status {
                                 p.status = state;
                                 if state == 7 {
@@ -197,6 +220,12 @@ impl Portal {
                 if page == Page::Pair {
                     self.selected = 0;
                 }
+                if page == Page::Session && self.page.is_dialog() {
+                    self.inputs[2].clear();
+                    if self.page == Page::Login && !self.media.0.is_null() {
+                        unsafe { portal_stop(self.media.0) };
+                    }
+                }
                 self.page = page;
                 if page == Page::Pair {
                     self.focus.focus(w)
@@ -276,13 +305,26 @@ impl Portal {
         }
         cx.notify();
     }
-    fn input(&mut self, e: &KeyDownEvent, cx: &mut Context<Self>) {
+    fn input(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !matches!(self.page, Page::Pair | Page::Login) || self.busy {
             return;
         }
         let k = &e.keystroke;
         match k.key.as_str() {
-            "tab" if self.page == Page::Pair => self.selected = (self.selected + 1) % 3,
+            "escape" => self.act(Action::Page(Page::Session), window, cx),
+            "enter" => self.act(
+                if self.page == Page::Pair {
+                    Action::Pair
+                } else {
+                    Action::Login
+                },
+                window,
+                cx,
+            ),
+            "tab" if self.page == Page::Pair => {
+                self.selected = (self.selected + if k.modifiers.shift { 2 } else { 1 }) % 3;
+                cx.stop_propagation();
+            }
             "backspace" => {
                 self.inputs[self.selected].pop();
             }
@@ -315,25 +357,152 @@ impl Portal {
         act: Action,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<T> {
+        let (base, hover) = match act {
+            Action::Connect | Action::Login | Action::Pair | Action::SelectConsole(_) => {
+                (ACCENT, ACCENT_HOVER)
+            }
+            Action::Page(Page::Session | Page::Quality) | Action::Scan => (PANEL, BUTTON),
+            _ => (BUTTON, BUTTON_HOVER),
+        };
         div()
             .id(("action", id))
-            .px_2()
-            .py_1()
+            .px_3()
+            .py_2()
             .rounded_md()
-            .bg(rgb(0x26374a))
-            .hover(|style| style.bg(rgb(0x354e67)))
+            .border_1()
+            .border_color(rgb(base))
+            .bg(rgb(base))
+            .hover(move |style| style.bg(rgb(hover)))
+            .focusable()
+            .focus(|style| style.border_color(rgb(FOCUS)))
+            .on_key_down(cx.listener(move |p, event: &KeyDownEvent, w, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                    cx.stop_propagation();
+                    p.act(act, w, cx);
+                }
+            }))
             .cursor_pointer()
             .child(text.into())
             .on_click(cx.listener(move |p, _, w, cx| p.act(act, w, cx)))
     }
+    fn dialog(&self, cx: &Context<Self>) -> AnyElement {
+        let pairing = self.page == Page::Pair;
+        let title = if pairing {
+            "Parear PS5"
+        } else {
+            "PIN de login do PS5"
+        };
+        let mut body = div().flex().flex_col().gap_3().child(
+            div()
+                .text_xl()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(title),
+        );
+        if pairing {
+            body = body.child(div().text_sm().text_color(rgb(MUTED)).child(
+                "No PS5, abra Configurações → Sistema → Uso remoto → Vincular dispositivo.",
+            ));
+        }
+        let fields = [
+            ("Endereço do PS5", "IP ou nome na rede"),
+            ("Account ID da PSN", "Decimal ou Base64"),
+            (
+                if pairing {
+                    "Código de vinculação"
+                } else {
+                    "PIN de login"
+                },
+                "Digite os números",
+            ),
+        ];
+        for (i, (label, hint)) in fields.iter().enumerate().skip(if pairing { 0 } else { 2 }) {
+            let input = &self.inputs[i];
+            let value = if input.is_empty() {
+                hint.to_string()
+            } else if i == 2 {
+                "•".repeat(input.len())
+            } else {
+                input.clone()
+            };
+            body = body.child(
+                div().flex().flex_col().gap_1().child(*label).child(
+                    div()
+                        .id(("input", i))
+                        .px_3()
+                        .py_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(rgb(if self.selected == i { FOCUS } else { BORDER }))
+                        .bg(rgb(BACKGROUND))
+                        .text_color(rgb(if input.is_empty() { MUTED } else { TEXT }))
+                        .cursor_text()
+                        .child(value)
+                        .on_click(cx.listener(move |p, _, w, cx| p.act(Action::Edit(i), w, cx))),
+                ),
+            );
+        }
+        if !self.notice.is_empty() {
+            body = body.child(div().text_sm().child(self.notice.clone()));
+        }
+        if !self.busy {
+            body = body.child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .pt_2()
+                    .child(Self::button(
+                        1000,
+                        "Cancelar",
+                        Action::Page(Page::Session),
+                        cx,
+                    ))
+                    .child(Self::button(
+                        1001,
+                        if pairing {
+                            "Parear console"
+                        } else {
+                            "Enviar PIN"
+                        },
+                        if pairing { Action::Pair } else { Action::Login },
+                        cx,
+                    )),
+            );
+        }
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x060a10c9))
+            .child(
+                div()
+                    .id("console-dialog")
+                    .w(px(460.))
+                    .max_w_full()
+                    .max_h_full()
+                    .overflow_y_scroll()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(rgb(BORDER))
+                    .bg(rgb(PANEL))
+                    .p_5()
+                    .child(body),
+            )
+            .into_any_element()
+    }
 }
 impl Render for Portal {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.page.is_dialog() && !self.focus.contains_focused(window, cx) {
+            self.focus.focus(window);
+        }
         let mut col = div()
             .id("controls")
             .h_full()
             .overflow_y_scroll()
-            .w(px(325.))
+            .w(px(SIDEBAR as f32))
             .flex()
             .flex_col()
             .gap_2()
@@ -344,31 +513,28 @@ impl Render for Portal {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child("Portal PS5"),
             );
-        match self.page {
-            Page::Login => {
-                col = col
-                    .child("O PS5 solicitou seu PIN de login")
-                    .child(Self::button(
-                        0,
-                        format!("PIN: {}", "•".repeat(self.inputs[2].len())),
-                        Action::Edit(2),
-                        cx,
-                    ))
-                    .child(Self::button(1, "Enviar PIN", Action::Login, cx));
-            }
+        match if self.page.is_dialog() {
+            Page::Session
+        } else {
+            self.page
+        } {
+            Page::Pair | Page::Login => unreachable!(),
             Page::Session => {
                 let paired = self.profile.is_file();
-                col = col.child(div().text_sm().text_color(rgb(0xaab9ca)).child(
-                    match self.status {
-                        1 => "Conectando ao PS5…",
-                        2 => "Remote Play em reprodução",
-                        3 => "Remote Play pausado",
-                        5 => "Desconectando…",
-                        6 => "Falha na sessão",
-                        _ if paired => "PS5 pareado",
-                        _ => "Configure seu PS5 para começar",
-                    },
-                ));
+                col = col.child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(MUTED))
+                        .child(match self.status {
+                            1 => "Conectando ao PS5…",
+                            2 => "Remote Play em reprodução",
+                            3 => "Remote Play pausado",
+                            5 => "Desconectando…",
+                            6 => "Falha na sessão",
+                            _ if paired => "PS5 pareado",
+                            _ => "Configure seu PS5 para começar",
+                        }),
+                );
                 if matches!(self.status, 1..=3) {
                     col = col.child(Self::button(1, "Desconectar", Action::Stop, cx));
                 } else if paired {
@@ -400,14 +566,17 @@ impl Render for Portal {
                             };
                             col = col.child(Self::button(
                                 20 + index,
-                                format!("PS5 · {} · {status}", console.address),
+                                format!("{} ({status})", console.address),
                                 Action::SelectConsole(index),
                                 cx,
                             ));
                         }
-                        col = col.child(div().text_sm().text_color(rgb(0xaab9ca)).child(
-                            "Selecione um console para preencher o endereço no pareamento.",
-                        ));
+                        col = col.child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(MUTED))
+                                .child("Escolha o PS5 que deseja parear."),
+                        );
                     }
                     discovery::State::Empty => {
                         col = col.child("Nenhum PS5 encontrado. Confira se o console está ligado e na mesma rede.");
@@ -432,41 +601,6 @@ impl Render for Portal {
                         Action::Page(Page::Quality),
                         cx,
                     )));
-            }
-            Page::Pair => {
-                col =
-                    col.child("PS5 → Configurações → Sistema → Uso remoto → Vincular dispositivo");
-                for (i, label) in [
-                    "Endereço IP do PS5",
-                    "Account ID (decimal ou Base64)",
-                    "Código de oito dígitos",
-                ]
-                .iter()
-                .enumerate()
-                {
-                    let value = if i == 2 {
-                        "•".repeat(self.inputs[i].len())
-                    } else {
-                        self.inputs[i].clone()
-                    };
-                    col = col.child(*label).child(Self::button(
-                        i,
-                        format!(
-                            "{}{}",
-                            if self.selected == i { "▸ " } else { "" },
-                            if value.is_empty() {
-                                "Clique para preencher"
-                            } else {
-                                &value
-                            }
-                        ),
-                        Action::Edit(i),
-                        cx,
-                    ));
-                }
-                col = col
-                    .child(Self::button(3, "Confirmar pareamento", Action::Pair, cx))
-                    .child(Self::button(4, "Voltar", Action::Page(Page::Session), cx));
             }
             Page::Quality => {
                 col = col.child(Self::button(
@@ -525,13 +659,20 @@ impl Render for Portal {
                 }
             }
         }
+        let dialog = self.page.is_dialog();
         div()
+            .relative()
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|v, e, _, cx| v.input(e, cx)))
+            .on_key_down(cx.listener(|v, e, w, cx| v.input(e, w, cx)))
             .size_full()
-            .bg(rgb(0x101820))
-            .text_color(rgb(0xedf2fa))
-            .child(col.child(self.notice.clone()))
+            .bg(rgb(BACKGROUND))
+            .text_color(rgb(TEXT))
+            .when(!dialog, |root| {
+                root.child(col.when(!self.notice.is_empty(), |col| {
+                    col.child(self.notice.clone())
+                }))
+            })
+            .when(dialog, |root| root.child(self.dialog(cx)))
     }
 }
 fn main() {
