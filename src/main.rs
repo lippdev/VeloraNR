@@ -56,7 +56,8 @@ enum Action {
     Stop,
     Wake,
     Change(usize, f32),
-    Bitrate(i32),
+    ToggleBitrateMenu,
+    Bitrate(u32),
 }
 struct Portal {
     media: Media,
@@ -64,6 +65,7 @@ struct Portal {
     quality_file: PathBuf,
     bitrate_file: PathBuf,
     bitrate: u32,
+    bitrate_menu_open: bool,
     fields: Vec<quality::Field>,
     values: Vec<f32>,
     page: Page,
@@ -176,6 +178,7 @@ impl Portal {
             quality_file,
             bitrate_file,
             bitrate,
+            bitrate_menu_open: false,
             fields,
             values,
             page: Page::Session,
@@ -205,6 +208,9 @@ impl Portal {
 
     fn act(&mut self, action: Action, w: &mut Window, cx: &mut Context<Self>) {
         self.notice.clear();
+        if !matches!(action, Action::ToggleBitrateMenu) {
+            self.bitrate_menu_open = false;
+        }
         let file: Vec<u16> = self
             .profile
             .as_os_str()
@@ -295,10 +301,10 @@ impl Portal {
                 }
             }
             Action::Stop => unsafe { portal_stop(self.media.0) },
-            Action::Bitrate(step) => {
-                let current = BITRATES.binary_search(&self.bitrate).unwrap_or(3);
-                let index = (current as i32 + step).clamp(0, BITRATES.len() as i32 - 1);
-                let requested = BITRATES[index as usize];
+            Action::ToggleBitrateMenu => {
+                self.bitrate_menu_open = !self.bitrate_menu_open;
+            }
+            Action::Bitrate(requested) => {
                 match std::fs::write(&self.bitrate_file, requested.to_string()) {
                     Ok(()) => self.bitrate = requested,
                     Err(err) => self.notice = format!("Falha ao salvar o bitrate: {err}"),
@@ -331,6 +337,12 @@ impl Portal {
         cx.notify();
     }
     fn input(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.bitrate_menu_open && e.keystroke.key == "escape" {
+            self.bitrate_menu_open = false;
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if !matches!(self.page, Page::Pair | Page::Login) || self.busy {
             return;
         }
@@ -564,15 +576,41 @@ impl Render for Portal {
                 if matches!(self.status, 1..=3) {
                     col = col.child(format!("{} Mbps", self.bitrate));
                 } else {
-                    let mut controls = div().flex().items_center().gap_2();
-                    if self.bitrate > BITRATES[0] {
-                        controls = controls.child(Self::button(6, "−", Action::Bitrate(-1), cx));
+                    let indicator = if self.bitrate_menu_open { "▴" } else { "▾" };
+                    col = col.child(Self::button(
+                        6,
+                        format!("{} Mbps  {indicator}", self.bitrate),
+                        Action::ToggleBitrateMenu,
+                        cx,
+                    ));
+                    if self.bitrate_menu_open {
+                        let mut menu = div()
+                            .id("bitrate-options")
+                            .max_h(px(260.))
+                            .overflow_y_scroll()
+                            .p_1()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(rgb(BORDER))
+                            .bg(rgb(PANEL));
+                        for (index, bitrate) in BITRATES.into_iter().enumerate() {
+                            let label = if bitrate == self.bitrate {
+                                format!("{bitrate} Mbps (selecionado)")
+                            } else {
+                                format!("{bitrate} Mbps")
+                            };
+                            menu = menu.child(Self::button(
+                                100 + index,
+                                label,
+                                Action::Bitrate(bitrate),
+                                cx,
+                            ));
+                        }
+                        col = col.child(menu);
                     }
-                    controls = controls.child(format!("{} Mbps", self.bitrate));
-                    if self.bitrate < BITRATES[BITRATES.len() - 1] {
-                        controls = controls.child(Self::button(7, "+", Action::Bitrate(1), cx));
-                    }
-                    col = col.child(controls);
                 }
                 if matches!(self.status, 1..=3) {
                     col = col.child(Self::button(1, "Desconectar", Action::Stop, cx));
