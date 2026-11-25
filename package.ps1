@@ -1,0 +1,32 @@
+param(
+    [string]$NativeBuild,
+    [string]$RuntimeAssets,
+    [string]$Destination
+)
+$ErrorActionPreference = 'Stop'
+$project = (Resolve-Path $PSScriptRoot).Path
+if (!$NativeBuild -or !$RuntimeAssets) {
+    throw 'Pass -NativeBuild (portal_media.dll and portal_media.lib) and -RuntimeAssets (media DLLs, shaders and models).'
+}
+if (!$Destination) { $Destination = Join-Path $project 'dist' }
+$env:PORTAL_NATIVE_DIR = (Resolve-Path $NativeBuild).Path
+cargo build --locked --manifest-path (Join-Path $project 'Cargo.toml')
+if ($LASTEXITCODE) { throw 'Cargo build failed' }
+$experimental = Join-Path $Destination 'runtime/experimental'
+$licenses = Join-Path $Destination 'licenses'
+New-Item -ItemType Directory -Force $experimental,$licenses,(Join-Path $Destination 'runtime_local') | Out-Null
+Copy-Item -LiteralPath (Join-Path $project 'target/debug/portal-ps5.exe'),(Join-Path $NativeBuild 'portal_media.dll') -Destination $Destination -Force
+foreach ($name in 'avcodec-63.dll','avformat-63.dll','avutil-61.dll','avfilter-12.dll','swresample-7.dll','swscale-10.dll','dav1d.dll','opus.dll','libcrypto-3-x64.dll','libssl-3-x64.dll','D3Dcompiler_47.dll','dolby_vision.dll','dovi.dll','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
+    $file = Join-Path $RuntimeAssets $name
+    if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $Destination -Force }
+}
+foreach ($name in 'shaders','runtime/models','runtime/experimental/nr-ampere') {
+    $dir = Join-Path $Destination $name
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets $name) | Copy-Item -Destination $dir -Recurse -Force
+}
+foreach ($name in 'nvngx_vsr.dll','nvngx_dlss.dll','nvngx_truehdr.dll') {
+    Copy-Item -LiteralPath (Join-Path $RuntimeAssets "runtime/experimental/$name") -Destination $experimental -Force
+}
+Copy-Item -LiteralPath (Join-Path $RuntimeAssets 'LICENSE'),(Join-Path $RuntimeAssets 'THIRD_PARTY_NOTICES.md') -Destination $Destination -Force
+Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets 'licenses') | Copy-Item -Destination $licenses -Recurse -Force
