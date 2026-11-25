@@ -30,3 +30,4 @@ foreach ($name in 'nvngx_vsr.dll','nvngx_dlss.dll','nvngx_truehdr.dll') {
 }
 Copy-Item -LiteralPath (Join-Path $RuntimeAssets 'LICENSE'),(Join-Path $RuntimeAssets 'THIRD_PARTY_NOTICES.md') -Destination $Destination -Force
 Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets 'licenses') | Copy-Item -Destination $licenses -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $project 'prototypes/fonts/OFL-Instrument-Sans.txt') -Destination $licenses -Force

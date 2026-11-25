@@ -3,17 +3,17 @@ mod discovery;
 mod pairing;
 mod quality;
 
-const BACKGROUND: u32 = 0x0c0c0c;
-const PANEL: u32 = 0x111111;
+const BACKGROUND: u32 = 0x101113;
+const PANEL: u32 = 0x202124;
 const TEXT: u32 = 0xf0efec;
 const MUTED: u32 = 0xb4b3b0;
-const BUTTON: u32 = 0x202020;
-const BUTTON_HOVER: u32 = 0x333333;
+const BUTTON: u32 = 0x2b2c30;
+const BUTTON_HOVER: u32 = 0x35363a;
 const ACCENT: u32 = 0xe8e7e3;
 const ACCENT_HOVER: u32 = 0xffffff;
-const BORDER: u32 = 0x494949;
+const BORDER: u32 = 0x36373b;
 const FOCUS: u32 = 0xe1e1dd;
-const SIDEBAR: i32 = 184;
+const SIDEBAR: i32 = 224;
 const BITRATES: [u32; 9] = [1, 5, 10, 15, 20, 30, 50, 80, 100];
 const DEFAULT_BITRATE: u32 = 15;
 use gpui::{prelude::*, *};
@@ -45,6 +45,8 @@ enum Page {
     Session,
     Pair,
     Quality,
+    Dlss,
+    FrameGen,
     Group(&'static str),
 }
 #[derive(Clone, Copy)]
@@ -54,6 +56,8 @@ enum Action {
     SelectConsole(usize),
     Page(Page),
     Edit(usize),
+    AccountHelp,
+    ToggleFg,
     Pair,
     Connect,
     Stop,
@@ -63,7 +67,7 @@ enum Action {
     Bitrate(u32),
 }
 struct Portal {
-    hero: std::sync::Arc<Image>,
+    logo: std::sync::Arc<Image>,
     media: Media,
     profile: PathBuf,
     quality_file: PathBuf,
@@ -177,9 +181,9 @@ impl Portal {
         })
         .detach();
         let mut portal = Self {
-            hero: std::sync::Arc::new(Image::from_bytes(
+            logo: std::sync::Arc::new(Image::from_bytes(
                 ImageFormat::Png,
-                include_bytes!("../assets/landscape.png").to_vec(),
+                include_bytes!("../assets/logo/veloranr-logo.png").to_vec(),
             )),
             media,
             profile,
@@ -225,7 +229,26 @@ impl Portal {
             .encode_wide()
             .chain(Some(0))
             .collect();
+        let action = if matches!(action, Action::ToggleFg) {
+            let i = self
+                .fields
+                .iter()
+                .position(|f| f.path == "multiplier")
+                .unwrap();
+            Action::Change(
+                i,
+                if self.values[i] > 1. {
+                    1. - self.values[i]
+                } else {
+                    1.
+                },
+            )
+        } else {
+            action
+        };
         match action {
+            Action::ToggleFg => unreachable!(),
+            Action::AccountHelp => cx.open_url("https://pyrosoft.pro/psnid/"),
             Action::Scan => {
                 if !matches!(self.discovery, discovery::State::Searching) {
                     self.scan(cx);
@@ -245,7 +268,14 @@ impl Portal {
             }
             Action::Page(page) => {
                 if page == Page::Pair {
-                    self.selected = 0;
+                    self.selected = if let discovery::State::Found(consoles) = &self.discovery
+                        && consoles.len() == 1
+                    {
+                        self.inputs[0].clone_from(&consoles[0].address);
+                        1
+                    } else {
+                        0
+                    };
                 }
                 if page == Page::Session && self.page.is_dialog() {
                     self.inputs[2].clear();
@@ -322,11 +352,30 @@ impl Portal {
             }
             Action::Change(i, d) => {
                 let f = &self.fields[i];
-                let old = self.values[i];
-                self.values[i] = ((old + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
+                let old = self.values.clone();
+                self.values[i] =
+                    ((old[i] + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
+                if matches!(f.path, "frameGenerationBackend" | "multiplier") {
+                    let index = |path| {
+                        self.fields
+                            .iter()
+                            .position(|field| field.path == path)
+                            .unwrap()
+                    };
+                    let backend = self.values[index("frameGenerationBackend")] as u32;
+                    let cap = match backend {
+                        1 => 4.,
+                        2 | 3 | 6 => 2.,
+                        4 => 8.,
+                        7 => 3.,
+                        _ => 6.,
+                    };
+                    let multiplier = index("multiplier");
+                    self.values[multiplier] = self.values[multiplier].min(cap);
+                }
                 if !unsafe { portal_quality(self.media.0, self.values.as_ptr(), self.values.len()) }
                 {
-                    self.values[i] = old;
+                    self.values = old;
                     self.notice = "Combinação de parâmetros inválida.".into();
                 } else {
                     let saved: std::collections::BTreeMap<_, _> = self
@@ -405,7 +454,9 @@ impl Portal {
         cx: &Context<Self>,
     ) -> impl IntoElement + use<T> {
         let (base, hover) = match act {
-            Action::Connect | Action::Login | Action::Pair => (ACCENT, ACCENT_HOVER),
+            Action::Connect | Action::Login | Action::Pair | Action::Page(Page::Pair) => {
+                (ACCENT, ACCENT_HOVER)
+            }
             Action::Page(Page::Session | Page::Quality) | Action::Scan => (PANEL, BUTTON),
             _ => (BUTTON, BUTTON_HOVER),
         };
@@ -413,7 +464,7 @@ impl Portal {
             .id(("action", id))
             .px_3()
             .py_2()
-            .rounded_sm()
+            .rounded_lg()
             .border_1()
             .border_color(rgb(if base == ACCENT { ACCENT } else { BORDER }))
             .text_color(rgb(if base == ACCENT { BACKGROUND } else { TEXT }))
@@ -434,7 +485,7 @@ impl Portal {
     fn dialog(&self, cx: &Context<Self>) -> AnyElement {
         let pairing = self.page == Page::Pair;
         let title = if pairing {
-            "Parear PS5"
+            "Vincular console"
         } else {
             "PIN de login do PS5"
         };
@@ -446,7 +497,7 @@ impl Portal {
         );
         if pairing {
             body = body.child(div().text_sm().text_color(rgb(MUTED)).child(
-                "No PS5, abra Configurações → Sistema → Uso remoto → Vincular dispositivo.",
+                "No PS5, abra Configurações → Sistema → Uso remoto. Ative o Uso remoto e escolha Vincular dispositivo.",
             ));
         }
         let fields = [
@@ -476,7 +527,7 @@ impl Portal {
                         .id(("input", i))
                         .px_3()
                         .py_2()
-                        .rounded_sm()
+                        .rounded_lg()
                         .border_1()
                         .border_color(rgb(if self.selected == i { FOCUS } else { BORDER }))
                         .bg(rgb(BACKGROUND))
@@ -486,6 +537,14 @@ impl Portal {
                         .on_click(cx.listener(move |p, _, w, cx| p.act(Action::Edit(i), w, cx))),
                 ),
             );
+        }
+        if pairing {
+            body = body.child(Self::button(
+                1002,
+                "Encontrar meu Account ID no Pyrosoft ↗",
+                Action::AccountHelp,
+                cx,
+            ));
         }
         if !self.notice.is_empty() {
             body = body.child(div().text_sm().child(self.notice.clone()));
@@ -506,7 +565,7 @@ impl Portal {
                     .child(Self::button(
                         1001,
                         if pairing {
-                            "Parear console"
+                            "Vincular console"
                         } else {
                             "Enviar PIN"
                         },
@@ -560,41 +619,15 @@ impl Render for Portal {
             .flex()
             .flex_col()
             .gap_3()
-            .p_4();
+            .px_8()
+            .py_6();
         match page {
             Page::Pair | Page::Login => unreachable!(),
             Page::Session => {
-                col = col.child(
-                    div()
-                        .relative()
-                        .w_full()
-                        .h(px(184.))
-                        .bg(rgb(0x090909))
-                        .flex_shrink_0()
-                        .overflow_hidden()
-                        .child(
-                            img(self.hero.clone())
-                                .absolute()
-                                .right_0()
-                                .h_full()
-                                .w(relative(0.75))
-                                .object_fit(ObjectFit::Contain),
-                        )
-                        .child(
-                            div()
-                                .absolute()
-                                .left_5()
-                                .top_8()
-                                .font_family("Consolas")
-                                .child(
-                                    div()
-                                        .text_size(px(44.))
-                                        .font_weight(FontWeight::BOLD)
-                                        .child("VeloraNR"),
-                                )
-                                .child(div().text_color(rgb(MUTED)).child("> Remote Play · PS5_")),
-                        ),
-                );
+                col = col.child(Self::page_header(
+                    "Remote Play",
+                    "Conecte-se ao seu PlayStation 5.",
+                ));
                 let cards = div()
                     .flex()
                     .gap_3()
@@ -626,14 +659,38 @@ impl Render for Portal {
                         .child(format!("Versão {}", env!("CARGO_PKG_VERSION"))),
                 ));
             }
-            Page::Quality => {
-                col = col.child(Self::heading("Qualidade de imagem"));
+            Page::Quality | Page::Dlss | Page::FrameGen => {
+                let (title, subtitle) = match page {
+                    Page::Dlss => (
+                        "DLSS 5",
+                        "Ajuste o processamento neural e as camadas de DLSS NR.",
+                    ),
+                    Page::FrameGen => (
+                        "Frame Generation",
+                        "Escolha o método e o multiplicador para a geração de quadros.",
+                    ),
+                    _ => (
+                        "Qualidade de imagem",
+                        "Ajuste o antisserrilhamento, a redução de ruído e os demais efeitos.",
+                    ),
+                };
+                col = col.child(Self::page_header(title, subtitle));
+                if page == Page::FrameGen {
+                    col = col.child(self.effect_settings("Frame Generation", cx));
+                }
                 let mut last = "";
                 for (i, f) in self.fields.iter().enumerate() {
-                    if f.group != last {
+                    if f.group != last
+                        && Self::effect_page(f.group) == page
+                        && page != Page::FrameGen
+                    {
                         col = col.child(Self::button(
                             i + 1,
-                            f.group,
+                            if f.group == "Ruído e AA" {
+                                "Antisserrilhamento e redução de ruído"
+                            } else {
+                                f.group
+                            },
                             Action::Page(Page::Group(f.group)),
                             cx,
                         ));
@@ -646,36 +703,10 @@ impl Render for Portal {
                     .child(Self::button(
                         0,
                         "Voltar à qualidade",
-                        Action::Page(Page::Quality),
+                        Action::Page(Self::effect_page(group)),
                         cx,
                     ))
-                    .child(group);
-                for (i, f) in self
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, f)| f.group == group)
-                {
-                    let v = self.values[i];
-                    let toggle = f.min == 0. && f.max == 1. && f.step == 1.;
-                    if toggle {
-                        col = col.child(Self::button(
-                            i * 2 + 1,
-                            format!("{} {}", if v == 0. { "○" } else { "✓" }, f.label),
-                            Action::Change(i, if v == 0. { 1. } else { -1. }),
-                            cx,
-                        ));
-                    } else {
-                        col = col.child(f.label).child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(Self::button(i * 2 + 1, "−", Action::Change(i, -1.), cx))
-                                .child(format!("{v:.2}"))
-                                .child(Self::button(i * 2 + 2, "+", Action::Change(i, 1.), cx)),
-                        );
-                    }
-                }
+                    .child(self.effect_settings(group, cx));
             }
         }
         let dialog = self.page.is_dialog();
@@ -686,6 +717,7 @@ impl Render for Portal {
             .size_full()
             .bg(rgb(BACKGROUND))
             .text_color(rgb(TEXT))
+            .font_family("Instrument Sans")
             .child(
                 div()
                     .size_full()
@@ -702,7 +734,12 @@ fn main() {
     // GPUI's DirectComposition surface can cover the native DXGI child.
     // Set the renderer mode before GPUI starts any threads.
     unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
-    Application::new().run(|cx| {
+    Application::new().with_assets(dashboard::Assets).run(|cx| {
+        cx.text_system()
+            .add_fonts(vec![std::borrow::Cow::Borrowed(include_bytes!(
+                "../assets/InstrumentSans.ttf"
+            ))])
+            .expect("carregar Instrument Sans");
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit()

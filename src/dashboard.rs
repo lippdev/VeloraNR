@@ -1,6 +1,162 @@
 use super::*;
+use std::borrow::Cow;
+
+pub(super) struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        Ok((path == "dualsense.svg")
+            .then(|| Cow::Borrowed(include_bytes!("../assets/dualsense.svg").as_slice())))
+    }
+
+    fn list(&self, _: &str) -> Result<Vec<SharedString>> {
+        Ok(vec!["dualsense.svg".into()])
+    }
+}
 
 impl Portal {
+    pub(super) fn page_header(title: &'static str, subtitle: &'static str) -> Div {
+        div()
+            .pb_3()
+            .child(
+                div()
+                    .text_size(px(36.))
+                    .font_weight(FontWeight::BOLD)
+                    .child(title),
+            )
+            .child(div().mt_1().text_color(rgb(MUTED)).child(subtitle))
+    }
+
+    pub(super) fn effect_page(group: &str) -> Page {
+        if group == "DLSS NR" || group.starts_with("Camada NR ") {
+            Page::Dlss
+        } else if group == "Frame Generation" {
+            Page::FrameGen
+        } else {
+            Page::Quality
+        }
+    }
+
+    pub(super) fn effect_settings(&self, group: &'static str, cx: &Context<Self>) -> Div {
+        let mut body = div().flex().flex_col();
+        if group == "Frame Generation" {
+            body = body.child(Self::button(
+                9000,
+                if self
+                    .fields
+                    .iter()
+                    .zip(&self.values)
+                    .any(|(field, value)| field.path == "multiplier" && *value > 1.)
+                {
+                    "Desativar Frame Generation"
+                } else {
+                    "Ativar Frame Generation"
+                },
+                Action::ToggleFg,
+                cx,
+            ));
+        }
+        let backend = self
+            .fields
+            .iter()
+            .position(|field| field.path == "frameGenerationBackend")
+            .unwrap();
+        for (i, field) in self
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.group == group)
+        {
+            let value = self.values[i];
+            if field.path.starts_with("vfg") && self.values[backend] != 4. {
+                continue;
+            }
+            let (label, options): (&str, &[&str]) = match field.path {
+                "frameGenerationBackend" => (
+                    "Método",
+                    &[
+                        "NVIDIA DLSS FG",
+                        "Intel XeSS FG",
+                        "AMD FSR 3.1",
+                        "AMD FSR 4 ML",
+                        "NVIDIA VFG",
+                        "ANR FG",
+                        "AMD FRC",
+                        "RIFE",
+                        "XeFG XMX",
+                    ],
+                ),
+                "fgMotion" | "nrMotion" | "srMotion" => (
+                    "Fonte de movimento",
+                    &["Sem movimento", "Fluxo óptico", "Automático"],
+                ),
+                "vfgQuality" => ("Qualidade VFG", &["Baixa", "Média", "Alta"]),
+                "lowLatency" => (
+                    "Ordem do processamento",
+                    &["Depois do upscaling", "Antes do upscaling"],
+                ),
+                "antiAlias.method" => (
+                    "Método de antisserrilhamento",
+                    &["FXAA", "SMAA", "MLAA", "DLAA"],
+                ),
+                "antiAlias.temporal" => ("Acumulação temporal", &["Desligada", "T2x", "4x"]),
+                _ => (field.label, &[]),
+            };
+            let toggle =
+                options.is_empty() && field.min == 0. && field.max == 1. && field.step == 1.;
+            let mut row = div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_3()
+                .py_2()
+                .border_b_1()
+                .border_color(rgb(BORDER))
+                .child(label);
+            if toggle {
+                row = row.child(Self::button(
+                    i * 2 + 1,
+                    if value == 0. { "Desligado" } else { "Ligado" },
+                    Action::Change(i, if value == 0. { 1. } else { -1. }),
+                    cx,
+                ));
+            } else {
+                let display = match field.path {
+                    "multiplier" if value == 1. => "Desligado".into(),
+                    "multiplier" => format!("{value:.0}×"),
+                    _ => options
+                        .get(value as usize)
+                        .map(|label| label.to_string())
+                        .unwrap_or_else(|| {
+                            if field.step >= 1. {
+                                format!("{value:.0}")
+                            } else {
+                                format!("{value:.2}")
+                            }
+                        }),
+                };
+                row = row.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(Self::button(i * 2 + 1, "−", Action::Change(i, -1.), cx))
+                        .child(div().min_w(px(65.)).text_center().child(display))
+                        .child(Self::button(i * 2 + 2, "+", Action::Change(i, 1.), cx)),
+                );
+            }
+            body = body.child(row);
+        }
+        Self::card(
+            if group == "Ruído e AA" {
+                "Antisserrilhamento e redução de ruído"
+            } else {
+                group
+            },
+            body,
+        )
+    }
+
     pub(super) fn heading(title: &'static str) -> Div {
         div()
             .text_xl()
@@ -14,7 +170,8 @@ impl Portal {
             .flex_shrink_0()
             .border_1()
             .border_color(rgb(BORDER))
-            .rounded_sm()
+            .rounded_xl()
+            .shadow_md()
             .bg(rgb(PANEL))
             .child(
                 div()
@@ -22,7 +179,6 @@ impl Portal {
                     .py_2()
                     .border_b_1()
                     .border_color(rgb(BORDER))
-                    .font_family("Consolas")
                     .font_weight(FontWeight::BOLD)
                     .child(title),
             )
@@ -32,16 +188,19 @@ impl Portal {
     pub(super) fn navigation(&self, page: Page, cx: &Context<Self>) -> Div {
         let mut nav = div().flex().flex_col().gap_1().p_2();
         for (index, (icon, label, dest)) in [
-            ("\u{e80f}", "Início", Page::Session),
+            ("\u{e80f}", "Visão geral", Page::Session),
             ("\u{e768}", "Streaming", Page::Stream),
-            ("\u{e9e9}", "Qualidade", Page::Quality),
+            ("\u{e9e9}", "Qualidade de imagem", Page::Quality),
+            ("\u{e9d9}", "DLSS 5", Page::Dlss),
+            ("\u{e7f4}", "Frame Generation", Page::FrameGen),
             ("\u{e713}", "Configurações", Page::Network),
             ("\u{e946}", "Sobre", Page::About),
         ]
         .into_iter()
         .enumerate()
         {
-            let active = page == dest || matches!(page, Page::Group(_)) && dest == Page::Quality;
+            let active = page == dest
+                || matches!(page, Page::Group(group) if dest == Self::effect_page(group));
             nav = nav.child(
                 div()
                     .id(("navigation", index))
@@ -73,18 +232,21 @@ impl Portal {
             .flex_shrink_0()
             .flex()
             .flex_col()
+            .bg(rgb(0x18191b))
             .border_r_1()
             .border_color(rgb(BORDER))
             .child(
                 div()
                     .py_5()
                     .flex()
-                    .flex_col()
+                    .px_4()
+                    .gap_2()
                     .items_center()
-                    .border_b_1()
-                    .border_color(rgb(BORDER))
-                    .font_family("Consolas")
-                    .child(div().text_3xl().child("Ⅴ"))
+                    .child(
+                        img(self.logo.clone())
+                            .size(px(30.))
+                            .object_fit(ObjectFit::Contain),
+                    )
                     .child(Self::heading("VeloraNR")),
             )
             .child(nav);
@@ -101,7 +263,7 @@ impl Portal {
                 .p_4()
                 .font_family("Consolas")
                 .text_color(rgb(MUTED))
-                .child("PS5"),
+                .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
         )
     }
 
@@ -113,8 +275,8 @@ impl Portal {
             3 => "Pausado",
             5 => "Desconectando…",
             6 => "Falha na sessão",
-            _ if paired => "Pareado",
-            _ => "Aguardando pareamento",
+            _ if paired => "Vinculado",
+            _ => "Não vinculado",
         };
         let mut body = div().flex().flex_col().gap_2().child(
             div()
@@ -123,13 +285,19 @@ impl Portal {
                 .gap_4()
                 .child(
                     div()
-                        .border_1()
-                        .border_color(rgb(BORDER))
-                        .px_3()
-                        .py_2()
-                        .text_xl()
-                        .font_family("Consolas")
-                        .child("PS5"),
+                        .size(px(76.))
+                        .flex_shrink_0()
+                        .rounded_xl()
+                        .bg(rgb(BACKGROUND))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            svg()
+                                .path("dualsense.svg")
+                                .size(px(52.))
+                                .text_color(rgb(TEXT)),
+                        ),
                 )
                 .child(
                     div()
@@ -161,17 +329,12 @@ impl Portal {
                 .child(Self::button(1, "Desconectar", Action::Stop, cx));
         } else if paired {
             body = body
-                .child(Self::button(
-                    0,
-                    "Conectar ao PS5 pareado",
-                    Action::Connect,
-                    cx,
-                ))
-                .child(Self::button(2, "Acordar PS5 pareado", Action::Wake, cx));
+                .child(Self::button(0, "Conectar", Action::Connect, cx))
+                .child(Self::button(2, "Acordar console", Action::Wake, cx));
         } else {
             body = body.child(Self::button(
                 0,
-                "Parear console",
+                "Vincular console",
                 Action::Page(Page::Pair),
                 cx,
             ));
@@ -192,7 +355,7 @@ impl Portal {
             .items_center()
             .justify_between()
             .gap_2()
-            .child("Bitrate solicitado");
+            .child("Bitrate");
         if matches!(self.status, 1..=3) {
             bitrate = bitrate.child(format!("{} Mbps", self.bitrate));
         } else {
@@ -232,9 +395,9 @@ impl Portal {
             }
             body = body.child(menu);
         }
-        for (path, label) in [("nr", "DLSS NR"), ("sr", "Super-resolução")] {
+        for (path, label) in [("nr", "DLSS 5"), ("multiplier", "Frame Generation")] {
             if let Some(i) = self.fields.iter().position(|f| f.path == path) {
-                let enabled = self.values[i] != 0.;
+                let enabled = self.values[i] > if path == "multiplier" { 1. } else { 0. };
                 body = body.child(
                     div()
                         .flex()
@@ -251,13 +414,17 @@ impl Portal {
                             } else {
                                 "○  Desligado"
                             },
-                            Action::Change(i, if enabled { -1. } else { 1. }),
+                            if path == "multiplier" {
+                                Action::ToggleFg
+                            } else {
+                                Action::Change(i, if enabled { -1. } else { 1. })
+                            },
                             cx,
                         )),
                 );
             }
         }
-        Self::card("Streaming", body)
+        Self::card("Qualidade de imagem", body)
     }
 
     pub(super) fn network_card(&self, cx: &Context<Self>) -> Div {

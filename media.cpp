@@ -108,7 +108,6 @@ API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
 #include "quality.def"
 #undef FIELD
         if(i!=count)return false;
-        q.multiplier=1;
         for(auto& layer:q.nrLayers){layer.lowLatencyPairing=q.lowLatency;layer.runtime=engine::NrRuntime::Ampere;}
         const auto& first=q.nrLayers[0];
         q.nrPolicy=first.sizePolicy;q.model=first.model;q.residual=first.residual;q.nrTemporal=first.temporal;
