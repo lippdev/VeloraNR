@@ -595,22 +595,14 @@ impl Render for Portal {
                             .border_1()
                             .border_color(rgb(BORDER))
                             .bg(rgb(PANEL));
-                        for (row_index, bitrates) in BITRATES.chunks(3).enumerate() {
-                            let mut row = div().flex().gap_1();
-                            for (column, &bitrate) in bitrates.iter().enumerate() {
-                                let label = if bitrate == self.bitrate {
-                                    format!("{bitrate} ✓")
-                                } else {
-                                    bitrate.to_string()
-                                };
-                                row = row.child(div().flex_1().child(Self::button(
-                                    100 + row_index * 3 + column,
-                                    label,
-                                    Action::Bitrate(bitrate),
-                                    cx,
-                                )));
-                            }
-                            menu = menu.child(row);
+                        for (index, bitrate) in BITRATES.into_iter().enumerate() {
+                            let marker = if bitrate == self.bitrate { "  ✓" } else { "" };
+                            menu = menu.child(Self::button(
+                                100 + index,
+                                format!("{bitrate} Mbps{marker}"),
+                                Action::Bitrate(bitrate),
+                                cx,
+                            ));
                         }
                         col = col.child(menu);
                     }
