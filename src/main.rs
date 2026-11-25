@@ -572,7 +572,7 @@ impl Render for Portal {
                             _ => "Configure seu PS5 para começar",
                         }),
                 );
-                col = col.child(div().mt_2().text_sm().child("Bitrate solicitado"));
+                col = col.child(div().mt_2().text_sm().child("Bitrate solicitado (Mbps)"));
                 if matches!(self.status, 1..=3) {
                     col = col.child(format!("{} Mbps", self.bitrate));
                 } else {
@@ -586,8 +586,7 @@ impl Render for Portal {
                     if self.bitrate_menu_open {
                         let mut menu = div()
                             .id("bitrate-options")
-                            .max_h(px(260.))
-                            .overflow_y_scroll()
+                            .flex_shrink_0()
                             .p_1()
                             .flex()
                             .flex_col()
@@ -596,18 +595,22 @@ impl Render for Portal {
                             .border_1()
                             .border_color(rgb(BORDER))
                             .bg(rgb(PANEL));
-                        for (index, bitrate) in BITRATES.into_iter().enumerate() {
-                            let label = if bitrate == self.bitrate {
-                                format!("{bitrate} Mbps (selecionado)")
-                            } else {
-                                format!("{bitrate} Mbps")
-                            };
-                            menu = menu.child(Self::button(
-                                100 + index,
-                                label,
-                                Action::Bitrate(bitrate),
-                                cx,
-                            ));
+                        for (row_index, bitrates) in BITRATES.chunks(3).enumerate() {
+                            let mut row = div().flex().gap_1();
+                            for (column, &bitrate) in bitrates.iter().enumerate() {
+                                let label = if bitrate == self.bitrate {
+                                    format!("{bitrate} ✓")
+                                } else {
+                                    bitrate.to_string()
+                                };
+                                row = row.child(div().flex_1().child(Self::button(
+                                    100 + row_index * 3 + column,
+                                    label,
+                                    Action::Bitrate(bitrate),
+                                    cx,
+                                )));
+                            }
+                            menu = menu.child(row);
                         }
                         col = col.child(menu);
                     }
