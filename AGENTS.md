@@ -1,4 +1,4 @@
-﻿# VeloraNR
+# VeloraNR
 
 ## Como trabalhar com o LippStack
 
@@ -19,6 +19,8 @@ Consulte o SKILL.md da skill aplicável e os arquivos de referência que ela ind
 - Use **epic-hypothesis**, **epic-breakdown-advisor**, **user-story** e **user-story-splitting** para dividir o escopo. **writing-plans** traduz decisões aprovadas em mudanças verificáveis. **jira-stories** serve para o fluxo autorizado de criação no Jira.
 
 ## Implementação, verificação e entrega
+
+- Faça um commit convencional ao concluir e verificar cada atualização solicitada. Inclua somente as mudanças daquela atualização.
 
 - Use **ponytail** como base de implementação. Reaproveite o fluxo existente, prefira a menor mudança que resolva a jornada inteira e verifique o resultado. Use **ponytail-review** em diffs, **ponytail-audit** em revisões de repositório, **ponytail-debt** para atalhos registrados, **ponytail-gain** para métricas e **ponytail-help** para consultar os modos.
 - Use **investigate** em crashes, tela preta ou quedas de FPS. Registre condições, hipótese e evidência antes de alterar o pipeline. Use **qa** para exercitar entradas reais, estados de erro e regressões.
