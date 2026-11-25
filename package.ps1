@@ -15,7 +15,7 @@ if ($LASTEXITCODE) { throw 'Cargo build failed' }
 $experimental = Join-Path $Destination 'runtime/experimental'
 $licenses = Join-Path $Destination 'licenses'
 New-Item -ItemType Directory -Force $experimental,$licenses,(Join-Path $Destination 'runtime_local') | Out-Null
-Copy-Item -LiteralPath (Join-Path $project 'target/debug/portal-ps5.exe'),(Join-Path $NativeBuild 'portal_media.dll') -Destination $Destination -Force
+Copy-Item -LiteralPath (Join-Path $project 'target/debug/veloranr.exe'),(Join-Path $NativeBuild 'portal_media.dll') -Destination $Destination -Force
 foreach ($name in 'avcodec-63.dll','avformat-63.dll','avutil-61.dll','avfilter-12.dll','swresample-7.dll','swscale-10.dll','dav1d.dll','opus.dll','libcrypto-3-x64.dll','libssl-3-x64.dll','D3Dcompiler_47.dll','dolby_vision.dll','dovi.dll','msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
     $file = Join-Path $RuntimeAssets $name
     if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $Destination -Force }

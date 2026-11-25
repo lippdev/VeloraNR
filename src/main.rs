@@ -548,7 +548,7 @@ impl Render for Portal {
                 div()
                     .text_xl()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Portal PS5"),
+                    .child("VeloraNR"),
             );
         match if self.page.is_dialog() {
             Page::Session
@@ -763,7 +763,7 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(b)),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Portal PS5".into()),
+                    title: Some("VeloraNR".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
