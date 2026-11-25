@@ -419,7 +419,7 @@ impl Portal {
             let input = &self.inputs[i];
             let value = if input.is_empty() {
                 hint.to_string()
-            } else if i == 2 {
+            } else if i == 2 && !pairing {
                 "•".repeat(input.len())
             } else {
                 input.clone()
@@ -676,6 +676,9 @@ impl Render for Portal {
     }
 }
 fn main() {
+    // GPUI's DirectComposition surface can cover the native DXGI child.
+    // Set the renderer mode before GPUI starts any threads.
+    unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
     Application::new().run(|cx| {
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {

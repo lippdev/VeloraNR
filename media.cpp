@@ -25,7 +25,12 @@ API Player* portal_new(HWND window,const wchar_t* logPath) noexcept {
     logger.setConsoleEnabled(false);
     logger.setRotation(8ull<<20,32ull<<20);
     if(logPath)logger.openFile(logPath,true);
-    try {auto p=std::make_unique<Player>(window);return p->video?p.release():nullptr;}catch(...){return nullptr;}
+    try {
+        // GPUI paints the parent HWND. Leave the child video rectangle to DXGI.
+        SetWindowLongPtrW(window,GWL_STYLE,GetWindowLongPtrW(window,GWL_STYLE)|WS_CLIPCHILDREN);
+        auto p=std::make_unique<Player>(window);
+        return p->video?p.release():nullptr;
+    }catch(...){return nullptr;}
 }
 API void portal_free(Player* p){delete p;}
 // The Rust registration worker polls this Chiaki callback and owns the timeout.
