@@ -1,0 +1,639 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>VeloraNR · Remote Play</title>
+<style>
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("fonts/instrument-sans.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 "Instrument Sans","Segoe UI Variable","Segoe UI",sans-serif;color:#f5f5f5;color-scheme:dark}#app{background:#101010;display:grid;grid-template-columns:19.3% 1fr;min-height:min(850px,56vw)}aside{background:#161616;padding:26px 10px;display:flex;flex-direction:column;gap:5px}strong{font-size:clamp(17px,2vw,28px);letter-spacing:-.03em;margin:3px 9px 24px;display:flex;align-items:center;gap:10px}svg{width:1.35em;height:1.35em;flex:none;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}aside button{background:transparent;border:0;text-align:left;justify-content:start;padding:12px 10px}aside button[aria-current=page]{background:#303030}small{color:#aaa}aside small{margin:auto 8px 0;padding-top:32px}main{padding:clamp(20px,4.3vw,68px) 2vw 3vw;min-width:0}h1,h2,h3,p{margin:0}h1{font-size:clamp(28px,3vw,48px);line-height:1.12;font-weight:700;letter-spacing:-.04em}header p{color:#aaa;margin:5px 0 22px;font-size:clamp(15px,1.55vw,24px)}.cards{display:grid;grid-template-columns:1.08fr 1fr;gap:1.4vw}section{background:#1c1c1c;border:1px solid #393939;border-radius:10px;min-width:0}button,select,input{font:inherit}button,select{border:1px solid #505050;border-radius:7px;background:#232323;color:inherit;padding:8px 12px;cursor:pointer}button{display:inline-flex;gap:9px;align-items:center;justify-content:center}button:hover,select:hover{background:#353535}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid white;outline-offset:3px}.console{padding:1.8vw;display:flex;flex-direction:column;justify-content:space-between;gap:20px}.identity,.actions,.heading,.row,.host{display:flex;align-items:center;gap:12px}.pad{width:clamp(68px,10vw,150px);aspect-ratio:1.09;background:#121212;border-radius:10px;display:grid;place-items:center}.pad svg{width:62%;height:62%;stroke-width:1.15}h2,h3{font-size:clamp(16px,1.8vw,26px);font-weight:650;letter-spacing:-.022em}.identity p,.host p{color:#bbb;margin:4px 0}.dot{display:inline-block;width:.72em;height:.72em;background:#39ce58;border-radius:50%;margin-right:7px}.actions button{flex:1;padding:12px 5px;white-space:nowrap}.primary{background:#e7e7e7;color:#101010;font-weight:650}.primary:hover{background:white}.heading{padding:13px 1.8vw;border-bottom:1px solid #363636}.row{justify-content:space-between;margin:0 1.8vw;padding:11px 0}.row+.row{border-top:1px solid #383838}.switch{width:42px;height:24px;border-radius:22px;padding:2px;justify-content:flex-start}.switch:before{content:"";background:#eee;width:17px;height:17px;border-radius:50%}.switch[aria-checked=true]{background:#ddd;justify-content:flex-end}.switch[aria-checked=true]:before{background:#222}.network{margin-top:2vw;background:#191919}.heading button,.tag{margin-left:auto}.network article{padding:14px 1.8vw 18px}.host{background:#222;border:1px solid #363636;padding:9px 14px;border-radius:7px;margin-bottom:14px}.host svg{width:32px;height:32px}.host p{font-size:13px;margin:0}.tag{color:#ccc;background:#323232;border-radius:5px;padding:3px 12px}.status{color:#bbb;font-size:13px;margin-top:8px}.status:empty{display:none}dialog{color:white;background:#202020;border:1px solid #555;border-radius:10px}dialog::backdrop{background:#0009}input{display:block;padding:8px;margin:10px 0 16px}#app [hidden]{display:none}@media(max-width:800px){body{font-size:13px}.actions{gap:4px}.actions button{white-space:normal}aside{padding-inline:4px}.heading{gap:6px}.pad{width:60px}}@media(max-width:610px){#app{display:block}aside{flex-direction:row;flex-wrap:wrap;padding:8px}strong{width:100%;margin:3px 8px}aside small{display:none}aside button{padding:7px}.cards{grid-template-columns:1fr}.console,.heading,.network article{padding:14px}.row{margin-inline:14px}main{padding:20px 10px}.network{margin-top:12px}}
+:root{--edge:#ffffff19;--rim:inset 0 1px 0 #ffffff0d;--ease:cubic-bezier(.2,.8,.2,1)}
+#app{background:radial-gradient(ellipse at 54% -20%,#292a2e 0,transparent 65%),#101113;-webkit-font-smoothing:antialiased}
+aside{background:linear-gradient(150deg,#202124,#161719 64%);border-right:1px solid var(--edge)}
+section{background:linear-gradient(145deg,#252629,#1b1c1f 78%);border-color:var(--edge);border-radius:16px;box-shadow:var(--rim),0 8px 24px #0003}
+.heading{border-color:var(--edge)}.row+.row{border-color:#ffffff12}
+.pad{background:linear-gradient(150deg,#343539,#151619 75%);border:1px solid var(--edge);border-radius:18px;box-shadow:var(--rim),0 4px 12px #0004}.pad svg{filter:drop-shadow(0 2px 2px #0009)}
+.host{background:#ffffff05;border-color:var(--edge);border-radius:10px}.tag{background:#ffffff0b}.dot{background:#69d38b}
+button,select{border-radius:9px;touch-action:manipulation}
+main button,select,dialog button{background:linear-gradient(#333438,#28292c);border-color:#ffffff26;box-shadow:var(--rim),0 2px 4px #0003}
+button{transition:transform 130ms var(--ease),background-color 130ms ease-out}
+button:active{transform:scale(.975)}
+main button.primary,dialog button[value=add]{color:#17181a;background:linear-gradient(#fafafb,#d9dadd);border-color:#ffffff9c;box-shadow:0 2px 6px #0005}
+aside button[aria-current=page]{background:#ffffff18;box-shadow:var(--rim),0 2px 5px #0002}
+@media(hover:hover){main button:hover,dialog button:hover,select:hover{filter:brightness(1.12)}aside button:hover{background:#ffffff0c}}
+.switch,.switch[aria-checked=true]{width:44px;height:26px;padding:3px;justify-content:flex-start;border-radius:30px}
+.switch:before{height:18px;width:18px;box-shadow:0 1px 3px #0006;transition:transform 180ms var(--ease)}
+.switch[aria-checked=true]{background:#a6dbb3}.switch[aria-checked=true]:before{background:#17291c;transform:translateX(17px)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #c1d7fa;outline-offset:3px}
+dialog{width:min(360px,90vw);padding:24px;border:1px solid #ffffff25;border-radius:18px;background:#26272bee;box-shadow:var(--rim),0 24px 70px #0008;backdrop-filter:blur(16px)}
+dialog::backdrop{background:#05060994}dialog h3{margin-bottom:15px}dialog input{width:100%;background:#16171a;border:1px solid #ffffff35;border-radius:8px;padding:10px;color:white}
+@keyframes enter-panel{from{opacity:.4;transform:translateY(4px)}}
+@keyframes enter-dialog{from{opacity:0;transform:translateY(5px) scale(.985)}}
+@media(prefers-reduced-motion:no-preference){main.enter>header,main.enter section{animation:enter-panel 170ms var(--ease)}dialog[open]{animation:enter-dialog 170ms var(--ease)}}
+@media(prefers-reduced-motion:reduce){button,.switch:before{transition:none}button:active{transform:none}}
+
+#pair-dialog{width:min(510px,94vw);max-height:calc(100% - 32px);padding:26px}
+#dismiss{float:right;width:32px;height:32px;font-size:20px}
+#setup h1{font-size:clamp(24px,3vw,32px)}
+#setup section{padding:0;border:none;box-shadow:none;background:none}
+.unpaired .console .dot{background:#989a9e}
+#empty-network{margin-bottom:14px;color:#bbb}
+#setup .steps{display:flex;gap:10px;align-items:center;color:#aaa;font-size:13px;margin-bottom:24px}
+.steps span[aria-current]{color:#fff;font-weight:650}.steps i{width:22px;height:1px;background:#494a50}
+#setup h1{max-width:18ch;margin:0 0 12px}#setup .intro{color:#b8b9bd;max-width:50ch;font-size:16px;margin-bottom:24px}
+#setup .identity{margin-bottom:20px}#setup .pad{width:76px}
+#setup .foot{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px}
+#setup label{display:block;margin-top:15px}#setup input{width:min(100%,360px);color:white;border:1px solid #555;border-radius:8px;background:#141517;padding:10px 12px;margin:5px 0}
+#setup details{margin-top:12px;color:#bbb}#setup summary{cursor:pointer}#setup .primary{padding:10px 18px}
+.account-help{display:inline-block;color:#c1d7fa;text-underline-offset:3px;font-size:14px}.account-help:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+
+/* Shared surfaces and spacing across the three views. */
+#app {grid-template-columns:clamp(174px,20%,236px) minmax(0,1fr)}
+main {width:100%;max-width:1360px;padding:clamp(24px,4vw,62px) clamp(16px,3vw,48px)}
+main>header p {margin-bottom:clamp(18px,2.5vw,32px);max-width:46ch}
+aside button {min-height:43px;line-height:1.2}
+aside strong {letter-spacing:-.03em}
+.cards {gap:clamp(12px,1.5vw,24px)}
+.console {padding:clamp(15px,2vw,28px);gap:22px}
+.identity {gap:clamp(12px,1.6vw,22px)}
+.identity>div:last-child {min-width:0}
+.pad {flex:none;width:clamp(70px,8vw,125px);border-radius:18px}
+.pad .dualsense {display:block;width:76%;height:auto;margin:auto;stroke-width:2.5}
+.pad-detail {stroke-width:2;stroke-opacity:.62}
+.host .dualsense {width:34px;height:25px;stroke-width:3.4}
+.network {margin-top:clamp(14px,2vw,28px)}
+.heading {min-height:55px}
+.row {min-height:54px;gap:16px}
+.row select {min-width:108px;font-variant-numeric:tabular-nums}
+.setting-detail {display:none;color:#b8b9bd;font-size:14px;margin-top:3px}
+[data-view=quality] .cards {grid-template-columns:1fr;max-width:760px}
+[data-view=quality] #quality>.heading {display:none}
+[data-view=quality] .row {padding:14px 0;min-height:70px}
+[data-view=quality] .setting-detail {display:block}
+[data-view=settings] .network {margin-top:0;max-width:860px}
+#pair-dialog {padding:clamp(18px,3vw,30px)}
+#setup h1 {line-height:1.12;margin-bottom:8px}
+#setup .intro {font-size:15px;margin-bottom:20px}
+#setup input {width:100%;max-width:none;min-height:42px}
+#setup .foot {border-top:1px solid var(--edge);padding-top:16px}
+#dismiss {border-radius:50%;color:#ccc}
+@media(max-width:920px) {
+  .cards {grid-template-columns:1fr}
+  .actions button {max-width:280px}
+}
+@media(max-width:610px) {
+  main {padding:22px 14px}
+  aside {gap:3px}
+  aside button {min-height:36px}
+  .network .heading {flex-wrap:wrap}
+  .network .heading button {margin-left:auto}
+}
+.effect-panels{display:grid;gap:14px;max-width:860px}
+.effect-panels summary{cursor:pointer;padding:16px 20px;font-size:16px;font-weight:650}
+.effect-panels details[open]>summary{border-bottom:1px solid var(--edge)}
+.effect-panels .row{margin-inline:20px}
+.effect-panels .row>span{min-width:0}
+.effect-panels .row select{max-width:54%;min-width:0}
+.effect-panels .row input{width:90px;margin:0;color:inherit;background:#17181a;border:1px solid #505050;border-radius:8px}
+.effect-panels .switch{flex:none}
+.effect-panels .setting-detail{display:block}
+.effect-panels .range{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.effect-panels .range input{padding:0;accent-color:#b1dbbe}
+.effect-panels output{min-width:40px;text-align:right}
+</style>
+<div id="app" class="unpaired"><aside><strong><i data-i="brand"></i>VeloraNR</strong><button aria-current="page" data-page="0"><i data-i="home"></i>Visão geral</button><button data-page="1"><i data-i="sliders"></i>Qualidade de imagem</button><button data-page="3"><i data-i="sliders"></i>DLSS 5</button><button data-page="4"><i data-i="play"></i>Frame Generation</button><button data-page="2"><i data-i="gear"></i>Configurações</button><small>v0.1.0</small></aside>
+<main data-view="overview"><header><h1 tabindex="-1">Remote Play</h1><p id="sub">Conecte-se ao seu PlayStation 5.</p></header><div class="cards">
+<section class="console"><div class="identity"><div class="pad"><i data-i="pad"></i></div><div><h2>PlayStation 5</h2><p><b class="dot"></b><span id="state">Vinculado · Ligado</span></p><small>IP: 192.168.0.114</small></div></div><div class="actions"><button class="primary" id="connect"><i data-i="play"></i><span>Conectar</span></button><button id="wake"><i data-i="power"></i>Acordar console</button></div></section>
+<section id="quality"><div class="heading"><i data-i="sliders"></i><h3>Qualidade de imagem</h3></div><label class="row"><span>Bitrate<span class="setting-detail">Limite de dados da transmissão.</span></span> <select id="rate"></select></label><div class="row"><span>DLSS 5<span class="setting-detail">Melhora a nitidez da imagem.</span></span><button class="switch" role="switch" aria-label="DLSS 5" data-effect="nr" aria-checked="false"></button></div><div class="row"><span>Frame Generation<span class="setting-detail">Gera quadros intermediários para suavizar o movimento.</span></span><button class="switch" role="switch" aria-label="Frame Generation" data-effect="fg" aria-checked="false"></button></div></section></div>
+<div class="effect-panels" id="effects" hidden></div>
+<div class="effect-panels" id="dlss-panel" hidden></div>
+<div class="effect-panels" id="fg-panel" hidden></div>
+<section class="network"><div class="heading"><i data-i="screen"></i><h3>Consoles na rede</h3><button id="scan"><i data-i="refresh"></i>Buscar novamente</button></div><article><p id="empty-network" hidden>Nenhum PS5 encontrado na rede.</p><div class="host"><i data-i="pad"></i><div><b>192.168.0.114</b><p><b class="dot"></b>Ligado</p></div><span class="tag">Pareado</span></div><button id="add">＋ Adicionar por IP</button></article></section><p class="status" role="status"></p></main></div>
+<dialog id="pair-dialog" aria-label="Vincular console"><button type="button" id="dismiss" aria-label="Fechar">×</button><div id="setup"></div></dialog>
+<script>
+const q=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
+const controllerIcon = `<svg class="dualsense" aria-hidden="true" viewBox="0 0 96 64">
+  <path d="M21 13Q29 8 36 12h24q7-4 15 1c7 4 10 14 13 25l4 14c2 9-7 12-12 5L69 43a6 6 0 0 0-5-3H32a6 6 0 0 0-5 3L16 57C11 64 2 61 4 52l4-14c3-11 6-21 13-25Z" fill="currentColor" fill-opacity=".08"/>
+  <g class="pad-detail">
+    <path d="M17 16l4-6h14m44 6-4-6H61M35 14h26l-3 13H38z M45 34h6"/>
+    <circle cx="33" cy="34" r="4.5"/><circle cx="63" cy="34" r="4.5"/>
+  </g>
+  <path d="M22 18v10m-5-5h10"/>
+  <g fill="currentColor" stroke="none">
+    <circle cx="74" cy="18" r="1.7"/><circle cx="74" cy="28" r="1.7"/>
+    <circle cx="69" cy="23" r="1.7"/><circle cx="79" cy="23" r="1.7"/>
+  </g>
+</svg>`;
+const paths={brand:'M2 5l7 5 3 9-5-4z M22 5l-7 5-3 9 5-4z',home:'M2 11l10-9 10 9 M5 9v12h5v-7h4v7h5V9',sliders:'M2 7h9m5 0h6M2 17h4m6 0h10 M16 7a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M12 17a3 3 0 1 1-6 0 3 3 0 1 1 6 0',gear:'M9 3l1-2h4l1 3 3 1 2-1 2 4-2 2v4l2 2-2 4-3-1-3 2h-4l-1-2-3-1-2 1-2-4 2-2v-3L2 8l2-4 3 1z M15 12a3 3 0 1 1-6 0 3 3 0 1 1 6 0',play:'M6 3l14 9-14 9z',power:'M12 2v10 M6 5a9 9 0 1 0 12 0',screen:'M2 3h20v14H2z M12 17v4m-5 0h10',refresh:'M3 11a9 9 0 0 1 16-5l2 2m0-5v5h-5 M21 13a9 9 0 0 1-16 5l-2-2m0 5v-5h5'};
+all('[data-i]').forEach(i=>i.outerHTML=i.dataset.i==='pad' ? controllerIcon : '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="'+paths[i.dataset.i]+'"/></svg>');
+const rate=q('#rate');[1,5,10,15,20,30,50,80,100].forEach(n=>rate.add(new Option(n+' Mbps',n,false,n===100)));rate.setAttribute('aria-label','Bitrate');
+const effects = {};
+function toggleEffect(key) {
+  effects[key] = !effects[key];
+  all('[data-effect]').filter(button => button.dataset.effect === key)
+    .forEach(button => button.setAttribute('aria-checked', Boolean(effects[key])));
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-effect]');
+  if (button) toggleEffect(button.dataset.effect);
+});
+const say=t=>q('.status').textContent=t;
+const pages = [
+  ['overview', 'Remote Play', 'Conecte-se ao seu PlayStation 5.'],
+  ['quality', 'Qualidade de imagem', 'Ajuste a transmissão e o processamento da imagem.'],
+  ['settings', 'Configurações', 'Encontre e vincule seu PlayStation 5 pela rede local.'],
+  ['dlss', 'DLSS 5', 'Configure o processamento neural antes ou depois do upscaling.'],
+  ['fg', 'Frame Generation', 'Escolha o método de interpolação e o multiplicador.']
+];
+const main = q('main');
+all('[data-page]').forEach(button => {
+  button.onclick = () => {
+    const index = Number(button.dataset.page);
+    if (button.hasAttribute('aria-current')) return;
+    q('[aria-current="page"]').removeAttribute('aria-current');
+    button.setAttribute('aria-current', 'page');
+    const [view, title, subtitle] = pages[index];
+    main.dataset.view = view;
+    q('main h1').textContent = title;
+    q('#sub').textContent = subtitle;
+    q('.console').hidden = index !== 0;
+    q('#quality').hidden = index !== 0;
+    q('.cards').hidden = index !== 0;
+    q('.network').hidden = index !== 0 && index !== 2;
+    q('#effects').hidden = index !== 1;
+    q('#dlss-panel').hidden = index !== 3;
+    q('#fg-panel').hidden = index !== 4;
+    say('');
+    q('main h1').focus({preventScroll:true});
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      main.getAnimations().forEach(animation => animation.cancel());
+      main.animate([{opacity:.7,transform:'translateY(3px)'},{opacity:1,transform:'none'}],
+        {duration:160,easing:'cubic-bezier(.2,.8,.2,1)'});
+    }
+  };
+});
+let live=false;q('#connect').onclick=()=>{if(!address){openPair();return} live=!live;q('#connect span').textContent=live?'Desconectar':'Conectar';q('#state').textContent=live?'Sessão simulada':'Vinculado · Ligado'};q('#wake').onclick=()=>say('O console de demonstração já está ligado.');q('#scan').onclick=()=>{say('Buscando…');setTimeout(()=>say('Busca simulada concluída.'),500)};
+const app = q('#app'), setup = q('#setup');
+const demoAddress = '192.168.0.114', storageKey = 'veloranr.prototype.console';
+const validIp = value => /^\d{1,3}(\.\d{1,3}){3}$/.test(value) && value.split('.').every(n => +n <= 255);
+let address = '', searchTimer;
+const dialog = q('#pair-dialog');
+function openPair(manualEntry = false) {
+  dialog.showModal();
+  if(manualEntry) manual(); else discover();
+}
+q('#add').onclick = () => openPair(true);
+q('#dismiss').onclick = () => dialog.close();
+dialog.addEventListener('close', () => {clearTimeout(searchTimer);setup.replaceChildren()});
+function showDashboard(host) {
+  address = host;
+  live = false;
+  const paired = Boolean(host);
+  app.classList.toggle('unpaired', !paired);
+  q('#state').textContent = paired ? 'Vinculado · Ligado' : 'Não vinculado';
+  q('#connect span').textContent = paired ? 'Conectar' : 'Vincular console';
+  q('#wake').hidden = !paired;
+  q('.console .identity small').textContent = paired ? 'IP: ' + host : 'Vincule seu PS5 para iniciar o Remote Play.';
+  q('.host .tag').textContent = host === demoAddress ? 'Vinculado' : 'Disponível';
+  q('.host').hidden = new URLSearchParams(location.search).get('rede') === 'vazia';
+  q('#empty-network').hidden = !q('.host').hidden;
+}
+function screen(step, title, intro, content, focus = true) {
+  clearTimeout(searchTimer);
+  setup.hidden = false;
+  setup.innerHTML = '<div class="steps" aria-label="Progresso">' +
+    ['Encontrar','Vincular','Jogar'].map((label,i) =>
+      (i ? '<i aria-hidden="true"></i>' : '') + '<span' + (step === i ? ' aria-current="step"' : '') + '>' + label + '</span>').join('') +
+    '</div><h1 tabindex="-1"></h1><p class="intro" aria-live="polite"></p><section>' + content + '</section>';
+  setup.querySelector('h1').textContent = title;
+  setup.querySelector('.intro').textContent = intro;
+  if (focus) setup.querySelector('h1').focus();
+}
+function controller(title, detail) {
+  return '<div class="identity"><div class="pad">' + q('.console .pad').innerHTML +
+    '</div><div><h2>' + title + '</h2><small>' + detail + '</small></div></div>';
+}
+function discover() {
+  screen(0,'Encontre seu PS5','Ligue o console e conecte o PC e o PS5 à mesma rede.',
+    controller('Procurando na rede…','A descoberta começa automaticamente.') +
+    '<button id="manual">Informar IP</button>', false);
+  q('#manual').onclick = manual;
+  searchTimer = setTimeout(() => {
+    const restoreFocus = setup.contains(document.activeElement);
+    const empty = new URLSearchParams(location.search).get('rede') === 'vazia';
+    screen(0,empty ? 'Vamos localizar seu PS5' : 'Encontramos seu PS5',
+      empty ? 'Confira se o PS5 está ligado e na mesma rede que este PC.' : 'Vincule o console uma vez para jogar pelo VeloraNR.',
+      controller(empty ? 'Nenhum console encontrado' : 'PlayStation 5', empty ? 'Você também pode informar o endereço do console.' : 'Ligado · ' + demoAddress) +
+      '<div class="foot"><button class="primary" id="next"></button><button id="manual">Informar IP</button></div>', false);
+    q('#next').textContent = empty ? 'Buscar novamente' : 'Vincular este PS5';
+    q('#next').onclick = empty ? discover : () => pair(demoAddress);
+    q('#manual').onclick = manual;
+    if (restoreFocus) q('#next').focus();
+  },650);
+}
+function manual() {
+  screen(0,'Informe o IP do PS5','No console, abra Configurações → Rede → Status da conexão → Exibir status da conexão.',
+    '<form><label>Endereço IPv4<input required placeholder="192.168.0.114"></label><div class="foot"><button class="primary">Continuar</button><button type="button" id="back">Voltar</button></div></form>');
+  const input = setup.querySelector('input');
+  input.oninput = () => input.setCustomValidity('');
+  setup.querySelector('form').onsubmit = e => {
+    e.preventDefault();
+    if(validIp(input.value.trim())) pair(input.value.trim());
+    else {input.setCustomValidity('Confira os quatro números do IPv4.');input.reportValidity();}
+  };
+  q('#back').onclick = discover;
+}
+function pair(host) {
+  screen(1,'Vincule seu PlayStation 5','No PS5, abra Configurações → Sistema → Uso remoto. Ative o Uso remoto e escolha Vincular dispositivo.',
+    '<form><h2>PlayStation 5</h2><small>' + host + '</small><label>Código exibido no PS5<input required id="code" type="text" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="8 dígitos"></label>' +
+    '<label>Account ID da PSN<input id="account" required placeholder="ID numérico ou Base64"></label><a class="account-help" href="https://pyrosoft.pro/psnid/" target="_blank" rel="noopener noreferrer">Encontrar meu Account ID no Pyrosoft (abre em outra aba)</a><details><summary>Como testar o vínculo?</summary><p>Para esta demonstração, use 12345678 como código e 1 como Account ID. No app, o ID identifica a conta usada no console.</p></details>' +
+    '<div class="foot"><button class="primary">Vincular console</button><button type="button" id="back">Voltar</button></div></form>');
+  q('#back').onclick = discover;
+  q('#account').oninput = e => e.target.setCustomValidity('');
+  setup.querySelector('form').onsubmit = e => {
+    e.preventDefault();
+    const field=q('#account'), value=field.value.trim();
+    if (!(/^\d+$/.test(value) && BigInt(value)<=18446744073709551615n) && !/^[A-Za-z0-9+/]{11}=$/.test(value)){
+      field.setCustomValidity('Use o Account ID numérico ou em Base64. Para testar, digite 1.');field.reportValidity();return;
+    }
+    try {localStorage.setItem(storageKey,host);} catch {}
+    showDashboard(host);
+    screen(2,'Seu PS5 está vinculado','Nas próximas vezes, você poderá conectar pela visão geral.',
+      controller('PlayStation 5','Vinculado · '+host)+'<div class="foot"><button id="play" class="primary">Conectar agora</button><button id="later">Ir para visão geral</button></div>');
+    q('#later').onclick=()=>{dialog.close();q('[data-page="0"]').click();q('#connect').focus()};
+    q('#play').onclick=()=>{dialog.close();q('[data-page="0"]').click();q('#connect').click();q('#connect').focus()};
+  };
+}
+let saved='';
+try {saved=localStorage.getItem(storageKey)||'';} catch {}
+showDashboard(validIp(saved) ? saved : '');
+
+// Snapshot of the Rust bridge's quality.def for this standalone prototype.
+const qualitySchema = {"Super-resolução": [["sr", "Ativar upscale", 0.0, 1.0, 0.0, 1.0 ],
+    ["srTarget", "Saída (0 QHD, 1 UHD)", 0.0, 1.0, 0.0, 1.0 ],
+    ["videoSrQuality", "Algoritmo (0 DLSS, 1–4 RTX, 5 FSR)", 0.0, 5.0, 2.0, 1.0 ],
+    ["dlssSrModel", "Modelo DLSS SR", 0.0, 1.0, 0.0, 1.0 ],
+    ["srMotion", "Movimento (0 zero, 1 óptico, 2 auto)", 0.0, 2.0, 1.0, 1.0 ],
+    ["dualSrEnabled", "Segunda etapa SR", 0.0, 1.0, 0.0, 1.0 ],
+    ["dualSrQuality", "Qualidade da segunda etapa", 0.0, 5.0, 2.0, 1.0 ],
+    ["dualSrTarget", "Saída da segunda etapa", 0.0, 1.0, 1.0, 1.0 ],
+    ["srPrescale", "Pré-escala", 0.0, 4.0, 0.0, 1.0 ],
+    ["srOutput", "Saída após SR", 0.0, 6.0, 0.0, 1.0]],
+  "DLSS NR": [["nr", "Ativar DLSS NR", 0.0, 1.0, 0.0, 1.0 ],
+    ["lowLatency", "Antes do upscaling", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayerCount", "Quantidade de camadas", 1.0, 4.0, 1.0, 1.0 ],
+    ["nrMotion", "Movimento (0 zero, 1 óptico, 2 auto)", 0.0, 2.0, 1.0, 1.0 ],
+    ["nrHoldStrength", "Estabilizador", 0.0, 1.0, 0.0, 0.1 ],
+    ["nrHoldTolerance", "Tolerância", 0.0, 1.0, 0.02, 0.01 ],
+    ["nrReuse", "Reutilização (0 off, 1 auto)", 0.0, 4.0, 0.0, 1.0]],
+  "Camada NR 1": [["nrLayers[0].enabled", "Camada ativa", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[0].sizePolicy", "Interna (0 1080p, 2 480p, 3 720p, 4 900p, 5 1440p)", 0.0, 5.0, 3.0, 1.0 ],
+    ["nrLayers[0].model.performance", "Modelo desempenho", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[0].model.intensity", "Intensidade", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].model.tone", "Tom", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].model.structure", "Estrutura", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].model.skin", "Pele", -1.0, 1.0, -1.0, 0.1 ],
+    ["nrLayers[0].model.style", "Estilo", 0.0, 2.0, 0.0, 1.0 ],
+    ["nrLayers[0].model.autoMask", "Máscara automática", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[0].model.uiCorrection", "Correção de interface", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[0].temporal", "Anticintilação", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[0].antiFlicker", "Método temporal", 1.0, 4.0, 2.0, 1.0 ],
+    ["nrLayers[0].residual.total", "Efeito total", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].residual.darken", "Escurecimento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].residual.brighten", "Clareamento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].residual.luminance", "Luminância", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].residual.color", "Cor", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[0].residual.correction.enabled", "Correção de imagem", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[0].residual.correction.automatic", "Correção automática", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[0].residual.correction.hue", "Correção · hue", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[0].residual.correction.chroma", "Correção · chroma", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[0].residual.correction.highlight", "Correção · highlight", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[0].residual.correction.compression", "Correção · compression", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[0].residual.correction.stability", "Correção · stability", 0.0, 1.0, 0.8, 0.05 ],
+    ["nrLayers[0].residual.correction.neutral", "Correção · neutral", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[0].residual.correction.colorKeep", "Correção · colorKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[0].residual.correction.lumaKeep", "Correção · lumaKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[0].residual.correction.shadow", "Correção · shadow", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[0].residual.correction.autoAmount", "Correção · autoAmount", 0.0, 1.0, 1.0, 0.05]],
+  "Camada NR 2": [["nrLayers[1].enabled", "Camada ativa", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[1].sizePolicy", "Interna (0 1080p, 2 480p, 3 720p, 4 900p, 5 1440p)", 0.0, 5.0, 3.0, 1.0 ],
+    ["nrLayers[1].model.performance", "Modelo desempenho", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[1].model.intensity", "Intensidade", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].model.tone", "Tom", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].model.structure", "Estrutura", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].model.skin", "Pele", -1.0, 1.0, -1.0, 0.1 ],
+    ["nrLayers[1].model.style", "Estilo", 0.0, 2.0, 0.0, 1.0 ],
+    ["nrLayers[1].model.autoMask", "Máscara automática", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[1].model.uiCorrection", "Correção de interface", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[1].temporal", "Anticintilação", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[1].antiFlicker", "Método temporal", 1.0, 4.0, 2.0, 1.0 ],
+    ["nrLayers[1].residual.total", "Efeito total", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].residual.darken", "Escurecimento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].residual.brighten", "Clareamento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].residual.luminance", "Luminância", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].residual.color", "Cor", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[1].residual.correction.enabled", "Correção de imagem", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[1].residual.correction.automatic", "Correção automática", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[1].residual.correction.hue", "Correção · hue", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[1].residual.correction.chroma", "Correção · chroma", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[1].residual.correction.highlight", "Correção · highlight", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[1].residual.correction.compression", "Correção · compression", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[1].residual.correction.stability", "Correção · stability", 0.0, 1.0, 0.8, 0.05 ],
+    ["nrLayers[1].residual.correction.neutral", "Correção · neutral", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[1].residual.correction.colorKeep", "Correção · colorKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[1].residual.correction.lumaKeep", "Correção · lumaKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[1].residual.correction.shadow", "Correção · shadow", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[1].residual.correction.autoAmount", "Correção · autoAmount", 0.0, 1.0, 1.0, 0.05]],
+  "Camada NR 3": [["nrLayers[2].enabled", "Camada ativa", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[2].sizePolicy", "Interna (0 1080p, 2 480p, 3 720p, 4 900p, 5 1440p)", 0.0, 5.0, 3.0, 1.0 ],
+    ["nrLayers[2].model.performance", "Modelo desempenho", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[2].model.intensity", "Intensidade", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].model.tone", "Tom", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].model.structure", "Estrutura", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].model.skin", "Pele", -1.0, 1.0, -1.0, 0.1 ],
+    ["nrLayers[2].model.style", "Estilo", 0.0, 2.0, 0.0, 1.0 ],
+    ["nrLayers[2].model.autoMask", "Máscara automática", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[2].model.uiCorrection", "Correção de interface", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[2].temporal", "Anticintilação", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[2].antiFlicker", "Método temporal", 1.0, 4.0, 2.0, 1.0 ],
+    ["nrLayers[2].residual.total", "Efeito total", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].residual.darken", "Escurecimento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].residual.brighten", "Clareamento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].residual.luminance", "Luminância", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].residual.color", "Cor", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[2].residual.correction.enabled", "Correção de imagem", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[2].residual.correction.automatic", "Correção automática", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[2].residual.correction.hue", "Correção · hue", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[2].residual.correction.chroma", "Correção · chroma", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[2].residual.correction.highlight", "Correção · highlight", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[2].residual.correction.compression", "Correção · compression", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[2].residual.correction.stability", "Correção · stability", 0.0, 1.0, 0.8, 0.05 ],
+    ["nrLayers[2].residual.correction.neutral", "Correção · neutral", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[2].residual.correction.colorKeep", "Correção · colorKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[2].residual.correction.lumaKeep", "Correção · lumaKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[2].residual.correction.shadow", "Correção · shadow", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[2].residual.correction.autoAmount", "Correção · autoAmount", 0.0, 1.0, 1.0, 0.05]],
+  "Camada NR 4": [["nrLayers[3].enabled", "Camada ativa", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[3].sizePolicy", "Interna (0 1080p, 2 480p, 3 720p, 4 900p, 5 1440p)", 0.0, 5.0, 3.0, 1.0 ],
+    ["nrLayers[3].model.performance", "Modelo desempenho", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[3].model.intensity", "Intensidade", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].model.tone", "Tom", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].model.structure", "Estrutura", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].model.skin", "Pele", -1.0, 1.0, -1.0, 0.1 ],
+    ["nrLayers[3].model.style", "Estilo", 0.0, 2.0, 0.0, 1.0 ],
+    ["nrLayers[3].model.autoMask", "Máscara automática", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[3].model.uiCorrection", "Correção de interface", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[3].temporal", "Anticintilação", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[3].antiFlicker", "Método temporal", 1.0, 4.0, 2.0, 1.0 ],
+    ["nrLayers[3].residual.total", "Efeito total", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].residual.darken", "Escurecimento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].residual.brighten", "Clareamento", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].residual.luminance", "Luminância", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].residual.color", "Cor", 0.0, 2.0, 1.0, 0.1 ],
+    ["nrLayers[3].residual.correction.enabled", "Correção de imagem", 0.0, 1.0, 0.0, 1.0 ],
+    ["nrLayers[3].residual.correction.automatic", "Correção automática", 0.0, 1.0, 1.0, 1.0 ],
+    ["nrLayers[3].residual.correction.hue", "Correção · hue", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[3].residual.correction.chroma", "Correção · chroma", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[3].residual.correction.highlight", "Correção · highlight", 0.0, 1.0, 1.0, 0.05 ],
+    ["nrLayers[3].residual.correction.compression", "Correção · compression", 0.0, 1.0, 0.75, 0.05 ],
+    ["nrLayers[3].residual.correction.stability", "Correção · stability", 0.0, 1.0, 0.8, 0.05 ],
+    ["nrLayers[3].residual.correction.neutral", "Correção · neutral", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[3].residual.correction.colorKeep", "Correção · colorKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[3].residual.correction.lumaKeep", "Correção · lumaKeep", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[3].residual.correction.shadow", "Correção · shadow", 0.0, 1.0, 0.0, 0.05 ],
+    ["nrLayers[3].residual.correction.autoAmount", "Correção · autoAmount", 0.0, 1.0, 1.0, 0.05]],
+  "Ruído e AA": [["videoDenoiseEnabled", "Redução de ruído", 0.0, 1.0, 0.0, 1.0 ],
+    ["videoDenoise.luma", "Ruído de luminância", 0.0, 1.0, 0.2, 0.05 ],
+    ["videoDenoise.chroma", "Ruído cromático", 0.0, 1.0, 0.6, 0.05 ],
+    ["antiAlias.enabled", "Anti-aliasing", 0.0, 1.0, 0.0, 1.0 ],
+    ["antiAlias.method", "Método (FXAA, SMAA, MLAA, DLAA)", 0.0, 3.0, 1.0, 1.0 ],
+    ["antiAlias.quality", "Qualidade AA", 0.0, 3.0, 2.0, 1.0 ],
+    ["antiAlias.temporal", "Temporal", 0.0, 2.0, 0.0, 1.0 ],
+    ["antiAlias.historyWeight", "Peso do histórico", 0.0, 0.95, 0.5, 0.05 ],
+    ["antiAlias.historyRejection", "Rejeição do histórico", 0.0, 32.0, 8.0, 1.0 ],
+    ["antiAlias.mlaaThreshold", "Limiar MLAA", 0.02, 0.3, 0.08, 0.01 ],
+    ["antiAlias.mlaaStrength", "Força MLAA", 0.0, 1.0, 1.0, 0.05]],
+  "HDR": [["videoHdr.enabled", "Ativar HDR de vídeo", 0.0, 1.0, 0.0, 1.0 ],
+    ["videoHdr.contrast", "Contraste", 0.0, 200.0, 125.0, 5.0 ],
+    ["videoHdr.saturation", "Saturação", 0.0, 200.0, 75.0, 5.0 ],
+    ["videoHdr.middleGray", "Cinza médio", 10.0, 100.0, 44.0, 1.0 ],
+    ["videoHdr.peakNits", "Pico em nits", 400.0, 2000.0, 1000.0, 50.0]],
+  "Proteção NR": [["protection.enabled", "Ativar", 0.0, 1.0, 0.0, 1.0 ],
+    ["protection.featherPixels", "Suavidade da borda", 0.0, 64.0, 2.0, 1.0 ],
+    ["protection.regions[0].left", "Área 1 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[0].top", "Área 1 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[0].right", "Área 1 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[0].bottom", "Área 1 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[0].ellipse", "Área 1 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["protection.regions[1].left", "Área 2 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[1].top", "Área 2 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[1].right", "Área 2 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[1].bottom", "Área 2 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[1].ellipse", "Área 2 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["protection.regions[2].left", "Área 3 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[2].top", "Área 3 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[2].right", "Área 3 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[2].bottom", "Área 3 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[2].ellipse", "Área 3 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["protection.regions[3].left", "Área 4 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[3].top", "Área 4 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[3].right", "Área 4 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[3].bottom", "Área 4 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["protection.regions[3].ellipse", "Área 4 · Elipse", 0.0, 1.0, 0.0, 1.0]],
+  "Exclusão de efeitos": [["exclusion.enabled", "Ativar", 0.0, 1.0, 0.0, 1.0 ],
+    ["exclusion.featherPixels", "Suavidade da borda", 0.0, 64.0, 2.0, 1.0 ],
+    ["exclusion.regions[0].left", "Área 1 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[0].top", "Área 1 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[0].right", "Área 1 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[0].bottom", "Área 1 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[0].ellipse", "Área 1 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["exclusion.regions[1].left", "Área 2 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[1].top", "Área 2 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[1].right", "Área 2 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[1].bottom", "Área 2 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[1].ellipse", "Área 2 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["exclusion.regions[2].left", "Área 3 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[2].top", "Área 3 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[2].right", "Área 3 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[2].bottom", "Área 3 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[2].ellipse", "Área 3 · Elipse", 0.0, 1.0, 0.0, 1.0 ],
+    ["exclusion.regions[3].left", "Área 4 · Esquerda", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[3].top", "Área 4 · Topo", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[3].right", "Área 4 · Direita", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[3].bottom", "Área 4 · Base", 0.0, 1.0, 0.0, 0.05 ],
+    ["exclusion.regions[3].ellipse", "Área 4 · Elipse", 0.0, 1.0, 0.0, 1.0]],
+  "Beleza": [["beauty.enabled", "Ativar beleza", 0.0, 1.0, 0.0, 1.0 ],
+    ["beauty.restore", "Restaurar rosto", 0.0, 1.0, 0.0, 1.0 ],
+    ["beauty.smooth", "Suavizar pele", 0.0, 1.0, 1.0, 1.0 ],
+    ["beauty.restoreStrength", "Força de restauração", 0.0, 1.0, 1.0, 0.05 ],
+    ["beauty.strength", "Intensidade", 0.0, 1.0, 1.0, 0.05 ],
+    ["beauty.smoothAmount", "Suavização", 0.0, 1.0, 0.5, 0.05 ],
+    ["beauty.radius", "Raio", 0.0, 12.0, 4.0, 1.0 ],
+    ["beauty.detail", "Detalhe", 0.0, 1.0, 0.65, 0.05 ],
+    ["beauty.texture", "Textura", 0.0, 1.0, 0.3, 0.05 ],
+    ["beauty.brighten", "Clareamento", 0.0, 1.0, 0.0, 0.05 ],
+    ["beauty.showMask", "Mostrar máscara", 0.0, 1.0, 0.0, 1.0 ],
+    ["beauty.scope", "Área da suavização", 0.0, 1.0, 0.0, 1.0 ],
+    ["beauty.restoreScope", "Área da restauração", 0.0, 1.0, 0.0, 1.0 ],
+    ["beautyDetection.quality", "Qualidade de detecção", 0.0, 2.0, 1.0, 1.0 ],
+    ["beautyDetection.maxFaces", "Máximo de rostos", 1.0, 8.0, 4.0, 1.0]]};
+const choiceLabels = {
+  lowLatency: ['Depois do upscaling', 'Antes do upscaling'],
+  nrMotion: ['Sem movimento', 'Fluxo óptico', 'Automático'],
+  srMotion: ['Sem movimento', 'Fluxo óptico', 'Automático'],
+  srTarget: ['1440p · QHD', '2160p · UHD'],
+  videoSrQuality: ['DLSS', 'RTX 1', 'RTX 2', 'RTX 3', 'RTX 4', 'FSR'],
+  'antiAlias.method': ['FXAA', 'SMAA', 'MLAA', 'DLAA'],
+  'antiAlias.quality': ['Baixa', 'Média', 'Alta', 'Ultra'],
+  'antiAlias.temporal': ['Desligado', 'T2x', '4x']
+};
+const settingNames = {
+  nr:'Ativar DLSS 5', lowLatency:'Ordem do processamento', nrLayerCount:'Camadas de DLSS NR',
+  nrMotion:'Fonte de movimento', srMotion:'Fonte de movimento', srTarget:'Resolução de saída',
+  videoSrQuality:'Algoritmo', 'antiAlias.enabled':'Reduzir serrilhado',
+  'antiAlias.method':'Método', 'antiAlias.quality':'Qualidade', 'antiAlias.temporal':'Acumulação temporal'
+};
+function addSection(parent, title, open) {
+  const card = document.createElement('section');
+  const detail = document.createElement('details');
+  const heading = document.createElement('summary');
+  heading.textContent = title;
+  detail.open = open;
+  detail.append(heading);
+  card.append(detail);
+  q(parent).append(card);
+  return detail;
+}
+function settingRow(group, label) {
+  const row = document.createElement('label');
+  row.className = 'row';
+  const title = document.createElement('span');
+  title.textContent = label;
+  row.append(title);
+  group.append(row);
+  return row;
+}
+function selectSetting(row, key, choices, value) {
+  const select = document.createElement('select');
+  select.dataset.setting = key;
+  choices.forEach(([option, label]) => select.add(new Option(label, option)));
+  select.value = value;
+  row.append(select);
+  return select;
+}
+function addSwitch(row, key, label, value) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'switch';
+  button.setAttribute('role','switch');
+  button.setAttribute('aria-label',label);
+  button.dataset.effect = key;
+  effects[key] = Boolean(value);
+  button.setAttribute('aria-checked',effects[key]);
+  row.append(button);
+}
+function renderQualityGroup(parent, title, fields, open = false) {
+  const group = addSection(parent, title, open);
+  fields.forEach(([key, original, min, max, initial, step]) => {
+    const label = settingNames[key] || original;
+    const row = settingRow(group, label);
+    row.dataset.field = key;
+    if (choiceLabels[key]) {
+      selectSetting(row,key,choiceLabels[key].map((name,index)=>[index,name]),initial);
+    } else if (min === 0 && max === 1 && step === 1) {
+      addSwitch(row,key,label,initial);
+    } else {
+      const control = document.createElement('input');
+      control.type = step < 1 ? 'range' : 'number';
+      control.min = min;
+      control.max = max;
+      control.step = step;
+      control.value = initial;
+      control.dataset.setting = key;
+      if (control.type === 'range') {
+        const range = document.createElement('span');
+        range.className = 'range';
+        const output = document.createElement('output');
+        output.value = control.value;
+        control.oninput = () => output.value = control.value;
+        range.append(control,output);
+        row.append(range);
+      } else {
+        row.append(control);
+      }
+    }
+  });
+}
+const noiseAA = qualitySchema['Ruído e AA'];
+renderQualityGroup('#effects','Antisserrilhamento',noiseAA.filter(([key])=>key.startsWith('antiAlias.')),true);
+renderQualityGroup('#effects','Redução de ruído',noiseAA.filter(([key])=>key.startsWith('videoDenoise')));
+for (const group of ['Super-resolução','HDR','Proteção NR','Exclusão de efeitos','Beleza']) {
+  renderQualityGroup('#effects',group,qualitySchema[group]);
+}
+renderQualityGroup('#dlss-panel','Processamento neural',qualitySchema['DLSS NR'],true);
+for (let layer = 1; layer <= 4; layer++) {
+  const group = 'Camada NR ' + layer;
+  renderQualityGroup('#dlss-panel',group,qualitySchema[group],layer === 1);
+}
+const layerCount = q('[data-setting="nrLayerCount"]');
+layerCount.oninput = () => {
+  all('#dlss-panel section').slice(1).forEach((card,index)=>card.hidden=index >= +layerCount.value);
+};
+layerCount.oninput();
+
+const aaMethod = q('[data-setting="antiAlias.method"]');
+const aaQuality = q('[data-setting="antiAlias.quality"]');
+const aaTemporal = q('[data-setting="antiAlias.temporal"]');
+function updateAA() {
+  const smaa = aaMethod.value === '1';
+  const fxaa = aaMethod.value === '0';
+  const mlaa = aaMethod.value === '2';
+  const previous = aaQuality.selectedIndex;
+  aaQuality.replaceChildren(...(fxaa ? ['Média','Alta','Ultra'] : choiceLabels['antiAlias.quality'])
+    .map((label,index)=>new Option(label,index)));
+  aaQuality.selectedIndex = Math.min(previous,aaQuality.length-1);
+  aaQuality.parentElement.hidden = !fxaa && !smaa;
+  aaTemporal.parentElement.hidden = !smaa;
+  const history = smaa && aaTemporal.value !== '0';
+  for (const key of ['historyWeight','historyRejection','mlaaThreshold','mlaaStrength']) {
+    q('[data-field="antiAlias.'+key+'"]').hidden = key.startsWith('mlaa') ? !mlaa : !history;
+  }
+}
+aaMethod.onchange = aaTemporal.onchange = updateAA;
+updateAA();
+
+const fgGroup = addSection('#fg-panel','Interpolação de quadros',true);
+addSwitch(settingRow(fgGroup,'Ativar Frame Generation'),'fg','Frame Generation',false);
+const backends = [
+  ['vfg','NVIDIA VFG',8], ['xess','Intel XeSS FG',4], ['dlss','NVIDIA DLSS FG',6],
+  ['xmx','XeFG XMX (experimental)',6], ['fsr3','AMD FSR 3.1',2], ['fsr4','AMD FSR 4 ML',2],
+  ['amdfrc','AMD FRC',2], ['rife','RIFE',3]
+];
+const backend = selectSetting(settingRow(fgGroup,'Método'),'fg.backend',backends,'vfg');
+const multiplier = selectSetting(settingRow(fgGroup,'Multiplicador'),'fg.multiplier',[],'');
+const motion = selectSetting(settingRow(fgGroup,'Fonte de movimento'),'fg.motion',
+  [['auto','Automático'],['optical','Fluxo óptico'],['zero','Sem movimento']],'auto');
+const vfgQuality = selectSetting(settingRow(fgGroup,'Qualidade VFG'),'fg.quality',
+  [['low','Baixa'],['medium','Média'],['high','Alta']],'medium');
+const fgNote = document.createElement('p');
+fgNote.className = 'row setting-detail';
+fgGroup.append(fgNote);
+function updateFG() {
+  const [, , ceiling] = backends.find(([id]) => id === backend.value);
+  const current = Number(multiplier.value) || 2;
+  multiplier.replaceChildren(...Array.from({length:ceiling-1},(_,index)=>new Option((index+2)+'×',index+2)));
+  multiplier.value = Math.min(current,ceiling);
+  vfgQuality.parentElement.hidden = backend.value !== 'vfg';
+  motion.parentElement.hidden = ['vfg','amdfrc','rife'].includes(backend.value);
+  fgNote.textContent = {
+    xess:'2× nativo. 3× e 4× dependem do runtime experimental.',
+    vfg:'6× a 8× são opções experimentais. A taxa atingida depende do hardware.',
+    dlss:'As opções disponíveis no app dependem da GPU e do runtime DLSS.'
+  }[backend.value] || 'A disponibilidade depende da GPU e do runtime.';
+}
+backend.onchange = updateFG;
+updateFG();
+
+</script></html>
