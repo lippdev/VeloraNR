@@ -1,0 +1,8 @@
+/target/
+/dist/
+/native/
+*.dat
+*.dll
+*.exe
+*.lib
+*.log
