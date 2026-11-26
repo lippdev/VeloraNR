@@ -607,7 +607,7 @@ updateAA();
 const fgGroup = addSection('#fg-panel','Interpolação de quadros',true);
 addSwitch(settingRow(fgGroup,'Ativar Frame Generation'),'fg','Frame Generation',false);
 const backends = [
-  ['vfg','NVIDIA VFG',8], ['xess','Intel XeSS FG',4], ['dlss','NVIDIA DLSS FG',6],
+  ['smfg','Super Motion (Next Boost)',6], ['vfg','NVIDIA VFG',8], ['xess','Intel XeSS FG',4], ['dlss','NVIDIA DLSS FG',6],
   ['xmx','XeFG XMX (experimental)',6], ['fsr3','AMD FSR 3.1',2], ['fsr4','AMD FSR 4 ML',2],
   ['amdfrc','AMD FRC',2], ['rife','RIFE',3]
 ];
@@ -626,8 +626,9 @@ function updateFG() {
   multiplier.replaceChildren(...Array.from({length:ceiling-1},(_,index)=>new Option((index+2)+'×',index+2)));
   multiplier.value = Math.min(current,ceiling);
   vfgQuality.parentElement.hidden = backend.value !== 'vfg';
-  motion.parentElement.hidden = ['vfg','amdfrc','rife'].includes(backend.value);
+  motion.parentElement.hidden = ['smfg','vfg','amdfrc','rife'].includes(backend.value);
   fgNote.textContent = {
+    smfg:'Captura o vídeo após o DLSS 5. Ligue ou desligue pela lateral durante a transmissão.',
     xess:'2× nativo. 3× e 4× dependem do runtime experimental.',
     vfg:'6× a 8× são opções experimentais. A taxa atingida depende do hardware.',
     dlss:'As opções disponíveis no app dependem da GPU e do runtime DLSS.'

@@ -1,6 +1,7 @@
 param(
     [string]$NativeBuild,
     [string]$RuntimeAssets,
+    [string]$SuperMotionEngine,
     [string]$Destination
 )
 $ErrorActionPreference = 'Stop'
@@ -40,6 +41,17 @@ foreach ($name in 'runtime/nvidia-vfg','runtime/experimental/dlssg-kernels','run
         New-Item -ItemType Directory -Force $target | Out-Null
         Get-ChildItem -LiteralPath $source | Copy-Item -Destination $target -Recurse -Force
     }
+}
+# Stage only the SMFG core. NVIDIA and Intel sidecar packs are separate products.
+if ($SuperMotionEngine) {
+    $source = (Resolve-Path -LiteralPath $SuperMotionEngine).Path
+    $target = Join-Path $Destination 'framegen/engine'
+    New-Item -ItemType Directory -Force $target | Out-Null
+    Copy-Item -LiteralPath (Join-Path $source 'nvngx.dll') -Destination $target -Force
+    foreach ($pattern in 'msvcp*.dll','concrt*.dll','vcruntime*.dll') {
+        Get-ChildItem -LiteralPath $source -Filter $pattern -File | Copy-Item -Destination $target -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $source 'ai') -Destination $target -Recurse -Force
 }
 $dlssg = Join-Path $RuntimeAssets 'runtime/experimental/nvngx_dlssg.dll'
 if (Test-Path -LiteralPath $dlssg -PathType Leaf) {

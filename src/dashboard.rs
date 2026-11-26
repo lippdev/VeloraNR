@@ -41,6 +41,19 @@ impl Portal {
         if !matches!(self.status, 2..=3) {
             return div();
         }
+        if fg && self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND {
+            let label = if !self.motion.status.is_empty() {
+                self.motion.status.as_str()
+            } else if self.setting_value("multiplier") <= 1. {
+                "Super Motion desligado"
+            } else {
+                "Super Motion preparado · abra a transmissão"
+            };
+            return div()
+                .text_sm()
+                .text_color(rgb(MUTED))
+                .child(label.to_owned());
+        }
         let multiplier = self.effect_status & 15;
         let requested = self.setting_value("multiplier") as i32;
         let nr_active = self.effect_status & 16 != 0;
@@ -97,6 +110,9 @@ impl Portal {
         {
             let value = self.values[i];
             let applicable = match field.path {
+                _ if group == "Frame Generation" && backend == super_motion::BACKEND => {
+                    matches!(field.path, "frameGenerationBackend" | "multiplier")
+                }
                 "vfgQuality" | "vfgAutoRegulate" => backend == 4,
                 "fgMotion" => !matches!(backend, 4 | 6 | 7),
                 "hudLock" => backend != 1,
@@ -124,6 +140,7 @@ impl Portal {
                         "AMD FRC",
                         "RIFE",
                         "XeFG XMX",
+                        "Super Motion (Next Boost)",
                     ],
                 ),
                 "fgMotion" | "nrMotion" | "srMotion" => (
@@ -378,6 +395,20 @@ impl Portal {
             )
             .child(nav);
         if page == Page::Stream && matches!(self.status, 1..=3) {
+            if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND {
+                rail = rail
+                    .child(div().p_2().child(Self::button(
+                        801,
+                        if self.setting_value("multiplier") > 1. {
+                            "Desligar Super Motion"
+                        } else {
+                            "Ligar Super Motion"
+                        },
+                        Action::ToggleFg,
+                        cx,
+                    )))
+                    .child(div().px_2().child(self.effect_health(true)));
+            }
             rail = rail.child(div().p_2().child(Self::button(
                 800,
                 "Desconectar",

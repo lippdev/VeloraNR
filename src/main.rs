@@ -2,6 +2,7 @@
 mod discovery;
 mod pairing;
 mod quality;
+mod super_motion;
 
 const BACKGROUND: u32 = 0x101113;
 const PANEL: u32 = 0x202124;
@@ -24,6 +25,8 @@ unsafe extern "C" {
     fn portal_new(parent: isize, log: *const u16) -> *mut c_void;
     fn portal_free(media: *mut c_void);
     fn portal_open(media: *mut c_void, file: *const u16, wake: bool, bitrate_kbps: u32) -> i32;
+    fn portal_preview(media: *mut c_void, file: *const u16) -> bool;
+    fn portal_capture_window(media: *mut c_void) -> isize;
     fn portal_stop(media: *mut c_void);
     fn portal_tick(media: *mut c_void, width: i32, show: bool) -> i32;
     fn portal_quality(media: *mut c_void, values: *const f32, count: usize) -> bool;
@@ -71,11 +74,13 @@ enum Action {
 }
 struct Portal {
     logo: std::sync::Arc<Image>,
+    motion: super_motion::Motion,
     media: Media,
     profile: PathBuf,
     quality_file: PathBuf,
     bitrate_file: PathBuf,
     bitrate: u32,
+    previous_multiplier: f32,
     bitrate_menu_open: bool,
     setting_menu: Option<usize>,
     fields: Vec<quality::Field>,
@@ -102,8 +107,18 @@ impl Portal {
         let RawWindowHandle::Win32(hwnd) = handle.as_raw() else {
             unreachable!()
         };
-        let root = PathBuf::from(std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA"))
-            .join("PortalPS5");
+        let preview = std::env::args_os().skip(1).collect::<Vec<_>>();
+        let preview = match preview.as_slice() {
+            [flag, path] if flag == "--test-video" => Some(PathBuf::from(path)),
+            _ => None,
+        };
+        let root = PathBuf::from(std::env::var_os("LOCALAPPDATA").expect("LOCALAPPDATA")).join(
+            if preview.is_some() {
+                "VeloraNR-test-video"
+            } else {
+                "PortalPS5"
+            },
+        );
         let mut notice = std::fs::create_dir_all(&root)
             .err()
             .map(|e| e.to_string())
@@ -151,6 +166,20 @@ impl Portal {
                 }
             }
         }
+        if let Some(path) = &preview {
+            let file: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+            if media.0.is_null()
+                || !path.is_file()
+                || !unsafe { portal_preview(media.0, file.as_ptr()) }
+            {
+                notice = "Não foi possível abrir o vídeo de teste.".into();
+            }
+        }
+        let backend_index = fields
+            .iter()
+            .position(|f| f.path == "frameGenerationBackend")
+            .unwrap();
+        let multiplier_index = fields.iter().position(|f| f.path == "multiplier").unwrap();
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
@@ -168,6 +197,27 @@ impl Portal {
                             };
                             let effects = state >> 8;
                             let state = state & 0xff;
+                            let wanted = if p.page == Page::Stream
+                                && state == 2
+                                && p.status == 2
+                                && p.values[backend_index] as u32 == super_motion::BACKEND
+                                && effects & 15 <= 1
+                                && p.values[multiplier_index] >= 2.
+                            {
+                                p.values[multiplier_index] as u32
+                            } else {
+                                0
+                            };
+                            let hwnd = if wanted != 0 {
+                                unsafe { portal_capture_window(p.media.0) }
+                            } else {
+                                0
+                            };
+                            if p.motion
+                                .tick(&root, hwnd, if hwnd == 0 { 0 } else { wanted })
+                            {
+                                cx.notify();
+                            }
                             if effects != p.effect_status {
                                 p.effect_status = effects;
                                 cx.notify();
@@ -197,16 +247,22 @@ impl Portal {
                 ImageFormat::Png,
                 include_bytes!("../assets/logo/veloranr-logo.png").to_vec(),
             )),
+            motion: Default::default(),
             media,
             profile,
             quality_file,
             bitrate_file,
             bitrate,
+            previous_multiplier: 2.,
             bitrate_menu_open: false,
             setting_menu: None,
             fields,
             values,
-            page: Page::Session,
+            page: if preview.is_some() {
+                Page::Stream
+            } else {
+                Page::Session
+            },
             inputs: Default::default(),
             selected: 0,
             busy: false,
@@ -216,7 +272,9 @@ impl Portal {
             focus: cx.focus_handle(),
             discovery: discovery::State::Searching,
         };
-        portal.scan(cx);
+        if preview.is_none() {
+            portal.scan(cx);
+        }
         portal
     }
     fn scan(&mut self, cx: &mut Context<Self>) {
@@ -257,9 +315,10 @@ impl Portal {
             Action::Change(
                 i,
                 if self.values[i] > 1. {
+                    self.previous_multiplier = self.values[i];
                     1. - self.values[i]
                 } else {
-                    1.
+                    self.previous_multiplier - 1.
                 },
             )
         } else {
@@ -384,6 +443,17 @@ impl Portal {
                 self.values[i] =
                     ((old[i] + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
                 quality::normalize(&self.fields, &mut self.values);
+                if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND
+                    && super_motion::engine().is_none()
+                    && (f.path == "frameGenerationBackend"
+                        || (f.path == "multiplier" && self.values[i] > 1.))
+                {
+                    self.values = old;
+                    self.notice =
+                        "Instale o pacote Super Motion do VeloraNR para usar esse método.".into();
+                    cx.notify();
+                    return;
+                }
                 if !unsafe { portal_quality(self.media.0, self.values.as_ptr(), self.values.len()) }
                 {
                     self.values = old;
