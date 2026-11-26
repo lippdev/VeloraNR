@@ -15,7 +15,7 @@ struct Player {
     engine::EngineController engine;
     engine::EnhancementSettings quality;
     remoteplay::ControllerInput pad;
-    bool padStarted=false;
+    bool padStarted=false, externalFg=false, detached=false;
     explicit Player(HWND window):parent(window),video(CreateWindowExW(0,L"STATIC",nullptr,
         WS_CHILD|WS_CLIPSIBLINGS,0,0,1,1,window,nullptr,GetModuleHandleW(nullptr),nullptr)) {}
     ~Player(){engine.stop();pad.stop();if(video)DestroyWindow(video);}
@@ -85,15 +85,44 @@ API int portal_open(Player* p,const wchar_t* profile,bool wake,uint32_t bitrateK
         p->engine.openRemotePlay(p->video,std::move(desc),engine::PlayerOptions::from(p->quality));return 0;
     }catch(...){return -3;}
 }
+API HWND portal_capture_window(Player* p){
+    return p->detached && IsWindowVisible(p->video) && !IsIconic(p->parent) ? p->video : nullptr;
+}
+API bool portal_preview(Player* p,const wchar_t* file) noexcept {
+    try {p->engine.open(p->video,file,engine::PlayerOptions::from(p->quality));return true;}
+    catch(...){return false;}
+}
 API void portal_stop(Player* p){p->engine.stop();p->pad.stop();p->padStarted=false;}
 API int portal_tick(Player* p,int sidebar,bool show){
+    // Windows Graphics Capture requires a top-level HWND. Keep the DXGI surface and its
+    // owner, but present the video as a borderless owned window while SMFG is selected.
+    if(p->externalFg != p->detached){
+        ShowWindow(p->video,SW_HIDE);
+        if(p->externalFg){
+            SetParent(p->video,nullptr);
+            SetWindowLongPtrW(p->video,GWL_STYLE,WS_POPUP|WS_CLIPSIBLINGS);
+            SetWindowLongPtrW(p->video,GWLP_HWNDPARENT,reinterpret_cast<LONG_PTR>(p->parent));
+            SetWindowLongPtrW(p->video,GWL_EXSTYLE,WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE);
+        }else{
+            SetWindowLongPtrW(p->video,GWLP_HWNDPARENT,0);
+            SetWindowLongPtrW(p->video,GWL_STYLE,WS_CHILD|WS_CLIPSIBLINGS);
+            SetWindowLongPtrW(p->video,GWL_EXSTYLE,0);
+            SetParent(p->video,p->parent);
+        }
+        SetWindowPos(p->video,nullptr,0,0,0,0,SWP_FRAMECHANGED|SWP_NOSIZE|SWP_NOMOVE|SWP_NOACTIVATE|SWP_NOZORDER);
+        p->detached=p->externalFg;
+    }
     RECT r{};GetClientRect(p->parent,&r);RECT rect{};GetWindowRect(p->video,&rect);
     POINT origin{rect.left,rect.top};ScreenToClient(p->parent,&origin);
     auto x=MulDiv(sidebar,GetDpiForWindow(p->parent),96);
     auto w=std::max<LONG>(1,r.right-x),h=std::max<LONG>(1,r.bottom);
-    if(origin.x!=x||origin.y||rect.right-rect.left!=w||rect.bottom-rect.top!=h)MoveWindow(p->video,x,0,w,h,TRUE);
+    if(origin.x!=x||origin.y||rect.right-rect.left!=w||rect.bottom-rect.top!=h){
+        POINT at{x,0};if(p->detached)ClientToScreen(p->parent,&at);
+        SetWindowPos(p->video,nullptr,at.x,at.y,w,h,SWP_NOACTIVATE|SWP_NOZORDER);
+    }
+    show=show&&!IsIconic(p->parent);
     if(bool(IsWindowVisible(p->video))!=show)ShowWindow(p->video,show?SW_SHOWNA:SW_HIDE);
-    if(p->padStarted){bool focused=GetForegroundWindow()==p->parent;p->engine.remotePlayController(p->pad.poll(focused));p->pad.feedback(p->engine.remotePlayFeedback(),focused);}
+    if(p->padStarted){auto front=GetForegroundWindow();bool focused=front==p->parent||front==p->video;p->engine.remotePlayController(p->pad.poll(focused));p->pad.feedback(p->engine.remotePlayFeedback(),focused);}
     auto state=p->engine.snapshot();
     if(state.remoteStream.state==remoteplay::SessionState::LoginPinRequired)return 7;
     const int effects = (int(state.applied.multiplier) << 8)
@@ -111,10 +140,18 @@ API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
 #include "quality.def"
 #undef FIELD
         if(i!=count)return false;
+        // Super Motion consumes the final presented image. Only one engine interpolates.
+        const auto requestedMultiplier=q.multiplier;
+        bool superMotion=static_cast<int>(q.frameGenerationBackend)==9;
+        if(superMotion){
+            q.frameGenerationBackend=engine::EnhancementSettings{}.frameGenerationBackend;
+            q.multiplier=1;
+        }
         for(auto& layer:q.nrLayers){layer.lowLatencyPairing=q.lowLatency;layer.runtime=engine::NrRuntime::Ampere;}
         const auto& first=q.nrLayers[0];
         q.nrPolicy=first.sizePolicy;q.model=first.model;q.residual=first.residual;q.nrTemporal=first.temporal;
         if(!p->engine.requestSettings(q))return false;
+        p->externalFg=superMotion && requestedMultiplier>1;
         p->quality=q;return true;
     }catch(...){return false;}
 }
