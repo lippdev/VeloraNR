@@ -17,7 +17,7 @@ struct Player {
     remoteplay::ControllerInput pad;
     bool padStarted=false;
     explicit Player(HWND window):parent(window),video(CreateWindowExW(0,L"STATIC",nullptr,
-        WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS,0,0,1,1,window,nullptr,GetModuleHandleW(nullptr),nullptr)) {}
+        WS_CHILD|WS_CLIPSIBLINGS,0,0,1,1,window,nullptr,GetModuleHandleW(nullptr),nullptr)) {}
     ~Player(){engine.stop();pad.stop();if(video)DestroyWindow(video);}
 };
 API Player* portal_new(HWND window,const wchar_t* logPath) noexcept {
@@ -96,7 +96,10 @@ API int portal_tick(Player* p,int sidebar,bool show){
     if(p->padStarted){bool focused=GetForegroundWindow()==p->parent;p->engine.remotePlayController(p->pad.poll(focused));p->pad.feedback(p->engine.remotePlayFeedback(),focused);}
     auto state=p->engine.snapshot();
     if(state.remoteStream.state==remoteplay::SessionState::LoginPinRequired)return 7;
-    return int(state.transport);
+    const int effects = (int(state.applied.multiplier) << 8)
+        | (int(state.nrActive) << 12) | (int(state.applying || state.nrPreparing) << 13)
+        | (int(!state.backendWarning.empty()) << 14);
+    return int(state.transport) | effects;
 }
 API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
     try {

@@ -37,6 +37,37 @@ impl Portal {
         }
     }
 
+    pub(super) fn effect_health(&self, fg: bool) -> Div {
+        if !matches!(self.status, 2..=3) {
+            return div();
+        }
+        let multiplier = self.effect_status & 15;
+        let requested = self.setting_value("multiplier") as i32;
+        let nr_active = self.effect_status & 16 != 0;
+        let status = if self.effect_status & 32 != 0 {
+            "Aplicando configuração…".into()
+        } else if fg && requested > 1 && multiplier != requested {
+            format!(
+                "Solicitado {requested}× · aplicado {}×. Consulte o log para detalhes.",
+                multiplier.max(1)
+            )
+        } else if fg && multiplier > 1 {
+            format!("Ativo · {multiplier}× aplicado")
+        } else if !fg && nr_active {
+            "DLSS NR ativo no vídeo".into()
+        } else if !fg && self.setting_value("nr") != 0. {
+            "DLSS NR solicitado · aguardando confirmação do motor".into()
+        } else {
+            "Desligado na transmissão".into()
+        };
+        div().text_sm().text_color(rgb(MUTED)).child(status)
+    }
+
+    pub(super) fn setting_value(&self, path: &str) -> f32 {
+        let index = self.fields.iter().position(|f| f.path == path).unwrap();
+        self.values[index]
+    }
+
     pub(super) fn effect_settings(&self, group: &'static str, cx: &Context<Self>) -> Div {
         let mut body = div().flex().flex_col();
         if group == "Frame Generation" {
@@ -56,11 +87,8 @@ impl Portal {
                 cx,
             ));
         }
-        let backend = self
-            .fields
-            .iter()
-            .position(|field| field.path == "frameGenerationBackend")
-            .unwrap();
+        let backend = self.setting_value("frameGenerationBackend") as u32;
+        let aa_method = self.setting_value("antiAlias.method") as u32;
         for (i, field) in self
             .fields
             .iter()
@@ -68,7 +96,19 @@ impl Portal {
             .filter(|(_, f)| f.group == group)
         {
             let value = self.values[i];
-            if field.path.starts_with("vfg") && self.values[backend] != 4. {
+            let applicable = match field.path {
+                "vfgQuality" | "vfgAutoRegulate" => backend == 4,
+                "fgMotion" => !matches!(backend, 4 | 6 | 7),
+                "hudLock" => backend != 1,
+                "antiAlias.quality" => aa_method <= 1,
+                "antiAlias.temporal" => aa_method == 1,
+                "antiAlias.historyWeight" | "antiAlias.historyRejection" => {
+                    aa_method == 1 && self.setting_value("antiAlias.temporal") > 0.
+                }
+                "antiAlias.mlaaThreshold" | "antiAlias.mlaaStrength" => aa_method == 2,
+                _ => true,
+            };
+            if !applicable {
                 continue;
             }
             let (label, options): (&str, &[&str]) = match field.path {
@@ -90,7 +130,71 @@ impl Portal {
                     "Fonte de movimento",
                     &["Sem movimento", "Fluxo óptico", "Automático"],
                 ),
-                "vfgQuality" => ("Qualidade VFG", &["Baixa", "Média", "Alta"]),
+                "vfgQuality" => (
+                    "Qualidade VFG",
+                    &[
+                        "Baixa",
+                        "Média",
+                        "Alta",
+                        "Alta + média",
+                        "Alta + baixa",
+                        "Média + baixa",
+                    ],
+                ),
+                "multiplier" => (
+                    "Multiplicador",
+                    &["Desligado", "2×", "3×", "4×", "5×", "6×", "7×", "8×"]
+                        [..quality::fg_limit(backend) as usize],
+                ),
+                "antiAlias.quality" if aa_method == 0 => {
+                    ("Qualidade AA", &["Média", "Alta", "Ultra"])
+                }
+                "antiAlias.quality" => ("Qualidade AA", &["Baixa", "Média", "Alta", "Ultra"]),
+                "nrReuse" => (
+                    "Reutilização",
+                    &[
+                        "Desligada",
+                        "Automática",
+                        "A cada 2 quadros",
+                        "A cada 3 quadros",
+                        "A cada 4 quadros",
+                    ],
+                ),
+                "srTarget" | "dualSrTarget" => (
+                    "Tamanho alvo",
+                    &["1440p · QHD", "4K", "8K", "5K", "6K", "7K"],
+                ),
+                "srOutput" => (
+                    "Saída após SR",
+                    &[
+                        "Manter alvo",
+                        "Resolução original",
+                        "1440p",
+                        "4K",
+                        "5K",
+                        "6K",
+                        "7K",
+                    ],
+                ),
+                "srPrescale" => (
+                    "Pré-escala",
+                    &["Desligada", "720p", "900p", "1080p", "1440p"],
+                ),
+                "videoSrQuality" | "dualSrQuality" => (
+                    "Algoritmo",
+                    &[
+                        "DLSS",
+                        "RTX · Baixo",
+                        "RTX · Médio",
+                        "RTX · Alto",
+                        "RTX · Ultra",
+                        "FSR",
+                    ],
+                ),
+                _ if field.path.ends_with(".sizePolicy") => (
+                    "Resolução interna",
+                    &["1080p · padrão", "Nativa", "480p", "720p", "900p", "1440p"],
+                ),
                 "lowLatency" => (
                     "Ordem do processamento",
                     &["Depois do upscaling", "Antes do upscaling"],
@@ -120,20 +224,43 @@ impl Portal {
                     Action::Change(i, if value == 0. { 1. } else { -1. }),
                     cx,
                 ));
+            } else if !options.is_empty() {
+                let selected = (value - field.min) as usize;
+                row = row.child(Self::button(
+                    i * 2 + 1,
+                    format!(
+                        "{}  ▾",
+                        options.get(selected).copied().unwrap_or("Selecionar")
+                    ),
+                    Action::SettingMenu(i),
+                    cx,
+                ));
+                body = body.child(row);
+                if self.setting_menu == Some(i) {
+                    let mut menu = div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .p_2()
+                        .rounded_lg()
+                        .bg(rgb(BACKGROUND));
+                    for (option, label) in options.iter().enumerate() {
+                        let marker = if option == selected { "  ✓" } else { "" };
+                        menu = menu.child(Self::button(
+                            20_000 + i * 16 + option,
+                            format!("{label}{marker}"),
+                            Action::ChooseSetting(i, field.min + option as f32),
+                            cx,
+                        ));
+                    }
+                    body = body.child(menu);
+                }
+                continue;
             } else {
-                let display = match field.path {
-                    "multiplier" if value == 1. => "Desligado".into(),
-                    "multiplier" => format!("{value:.0}×"),
-                    _ => options
-                        .get(value as usize)
-                        .map(|label| label.to_string())
-                        .unwrap_or_else(|| {
-                            if field.step >= 1. {
-                                format!("{value:.0}")
-                            } else {
-                                format!("{value:.2}")
-                            }
-                        }),
+                let display = if field.step >= 1. {
+                    format!("{value:.0}")
+                } else {
+                    format!("{value:.2}")
                 };
                 row = row.child(
                     div()
@@ -278,7 +405,7 @@ impl Portal {
             _ if paired => "Vinculado",
             _ => "Não vinculado",
         };
-        let mut body = div().flex().flex_col().gap_2().child(
+        let mut body = div().flex().flex_col().justify_between().gap_4().child(
             div()
                 .flex()
                 .items_center()
@@ -328,9 +455,22 @@ impl Portal {
                 ))
                 .child(Self::button(1, "Desconectar", Action::Stop, cx));
         } else if paired {
-            body = body
-                .child(Self::button(0, "Conectar", Action::Connect, cx))
-                .child(Self::button(2, "Acordar console", Action::Wake, cx));
+            body = body.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(
+                        Self::button(0, "Conectar", Action::Connect, cx)
+                            .flex_1()
+                            .text_center(),
+                    )
+                    .child(
+                        Self::button(2, "Acordar console", Action::Wake, cx)
+                            .flex_1()
+                            .text_center(),
+                    ),
+            );
         } else {
             body = body.child(Self::button(
                 0,
@@ -453,22 +593,17 @@ impl Portal {
         }
         Self::card(
             "Consoles na rede",
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap_2()
-                .child(list)
-                .when(
-                    !matches!(self.discovery, discovery::State::Searching),
-                    |d| d.child(Self::button(5, "Buscar novamente", Action::Scan, cx)),
-                )
-                .child(Self::button(
-                    3,
-                    "Informar IP manualmente",
-                    Action::Page(Page::Pair),
-                    cx,
-                )),
+            div().flex().flex_col().gap_3().child(list).child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(Self::button(3, "Adicionar por IP", Action::ManualPair, cx))
+                    .when(
+                        !matches!(self.discovery, discovery::State::Searching),
+                        |d| d.child(Self::button(5, "Buscar novamente", Action::Scan, cx)),
+                    ),
+            ),
         )
     }
 }

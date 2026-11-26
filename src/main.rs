@@ -58,6 +58,9 @@ enum Action {
     Edit(usize),
     AccountHelp,
     ToggleFg,
+    SettingMenu(usize),
+    ChooseSetting(usize, f32),
+    ManualPair,
     Pair,
     Connect,
     Stop,
@@ -74,6 +77,7 @@ struct Portal {
     bitrate_file: PathBuf,
     bitrate: u32,
     bitrate_menu_open: bool,
+    setting_menu: Option<usize>,
     fields: Vec<quality::Field>,
     values: Vec<f32>,
     page: Page,
@@ -81,6 +85,7 @@ struct Portal {
     selected: usize,
     busy: bool,
     status: i32,
+    effect_status: i32,
     notice: String,
     focus: FocusHandle,
     discovery: discovery::State,
@@ -138,6 +143,7 @@ impl Portal {
                     }
                 }
             }
+            quality::normalize(&fields, &mut values);
             if !unsafe { portal_quality(media.0, values.as_ptr(), values.len()) } {
                 values = fields.iter().map(|f| f.initial).collect();
                 if !unsafe { portal_quality(media.0, values.as_ptr(), values.len()) } {
@@ -157,9 +163,15 @@ impl Portal {
                                 portal_tick(
                                     p.media.0,
                                     SIDEBAR,
-                                    p.page == Page::Stream && matches!(p.status, 1..=3),
+                                    p.page == Page::Stream && matches!(p.status, 2..=3),
                                 )
                             };
+                            let effects = state >> 8;
+                            let state = state & 0xff;
+                            if effects != p.effect_status {
+                                p.effect_status = effects;
+                                cx.notify();
+                            }
                             if state != p.status {
                                 p.status = state;
                                 if state == 7 {
@@ -191,6 +203,7 @@ impl Portal {
             bitrate_file,
             bitrate,
             bitrate_menu_open: false,
+            setting_menu: None,
             fields,
             values,
             page: Page::Session,
@@ -198,6 +211,7 @@ impl Portal {
             selected: 0,
             busy: false,
             status: 0,
+            effect_status: 0,
             notice,
             focus: cx.focus_handle(),
             discovery: discovery::State::Searching,
@@ -223,13 +237,18 @@ impl Portal {
         if !matches!(action, Action::ToggleBitrateMenu) {
             self.bitrate_menu_open = false;
         }
+        if !matches!(action, Action::SettingMenu(_)) {
+            self.setting_menu = None;
+        }
         let file: Vec<u16> = self
             .profile
             .as_os_str()
             .encode_wide()
             .chain(Some(0))
             .collect();
-        let action = if matches!(action, Action::ToggleFg) {
+        let action = if let Action::ChooseSetting(i, value) = action {
+            Action::Change(i, (value - self.values[i]) / self.fields[i].step)
+        } else if matches!(action, Action::ToggleFg) {
             let i = self
                 .fields
                 .iter()
@@ -247,7 +266,16 @@ impl Portal {
             action
         };
         match action {
-            Action::ToggleFg => unreachable!(),
+            Action::ToggleFg | Action::ChooseSetting(..) => unreachable!(),
+            Action::SettingMenu(i) => {
+                self.setting_menu = (self.setting_menu != Some(i)).then_some(i)
+            }
+            Action::ManualPair => {
+                self.inputs[0].clear();
+                self.selected = 0;
+                self.page = Page::Pair;
+                self.focus.focus(w);
+            }
             Action::AccountHelp => cx.open_url("https://pyrosoft.pro/psnid/"),
             Action::Scan => {
                 if !matches!(self.discovery, discovery::State::Searching) {
@@ -355,24 +383,7 @@ impl Portal {
                 let old = self.values.clone();
                 self.values[i] =
                     ((old[i] + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
-                if matches!(f.path, "frameGenerationBackend" | "multiplier") {
-                    let index = |path| {
-                        self.fields
-                            .iter()
-                            .position(|field| field.path == path)
-                            .unwrap()
-                    };
-                    let backend = self.values[index("frameGenerationBackend")] as u32;
-                    let cap = match backend {
-                        1 => 4.,
-                        2 | 3 | 6 => 2.,
-                        4 => 8.,
-                        7 => 3.,
-                        _ => 6.,
-                    };
-                    let multiplier = index("multiplier");
-                    self.values[multiplier] = self.values[multiplier].min(cap);
-                }
+                quality::normalize(&self.fields, &mut self.values);
                 if !unsafe { portal_quality(self.media.0, self.values.as_ptr(), self.values.len()) }
                 {
                     self.values = old;
@@ -396,7 +407,8 @@ impl Portal {
         cx.notify();
     }
     fn input(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.bitrate_menu_open && e.keystroke.key == "escape" {
+        if (self.bitrate_menu_open || self.setting_menu.is_some()) && e.keystroke.key == "escape" {
+            self.setting_menu = None;
             self.bitrate_menu_open = false;
             cx.stop_propagation();
             cx.notify();
@@ -452,7 +464,7 @@ impl Portal {
         text: T,
         act: Action,
         cx: &Context<Self>,
-    ) -> impl IntoElement + use<T> {
+    ) -> Stateful<Div> {
         let (base, hover) = match act {
             Action::Connect | Action::Login | Action::Pair | Action::Page(Page::Pair) => {
                 (ACCENT, ACCENT_HOVER)
@@ -463,7 +475,10 @@ impl Portal {
         div()
             .id(("action", id))
             .px_3()
-            .py_2()
+            .when(matches!(act, Action::ChooseSetting(..)), |d| {
+                d.py_0p5().text_sm()
+            })
+            .when(!matches!(act, Action::ChooseSetting(..)), |d| d.py_2())
             .rounded_lg()
             .border_1()
             .border_color(rgb(if base == ACCENT { ACCENT } else { BORDER }))
@@ -637,7 +652,12 @@ impl Render for Portal {
                 col = col.child(cards).child(self.network_card(cx));
             }
             Page::Stream => {
-                if !live {
+                if self.status == 1 {
+                    col = col.child(Self::page_header(
+                        "Conectando ao PS5…",
+                        "A imagem aparece assim que o console iniciar a transmissão.",
+                    ));
+                } else if !live {
                     col = col
                         .child(self.console_card(cx))
                         .child(self.streaming_card(cx));
@@ -675,14 +695,25 @@ impl Render for Portal {
                     ),
                 };
                 col = col.child(Self::page_header(title, subtitle));
+                if page == Page::Dlss {
+                    col = col
+                        .child(self.effect_health(false))
+                        .child(self.effect_settings("DLSS NR", cx));
+                }
                 if page == Page::FrameGen {
-                    col = col.child(self.effect_settings("Frame Generation", cx));
+                    col = col
+                        .child(self.effect_health(true))
+                        .child(self.effect_settings("Frame Generation", cx));
                 }
                 let mut last = "";
                 for (i, f) in self.fields.iter().enumerate() {
                     if f.group != last
                         && Self::effect_page(f.group) == page
                         && page != Page::FrameGen
+                        && f.group != "DLSS NR"
+                        && (!f.group.starts_with("Camada NR ")
+                            || f.group.as_bytes().last().unwrap() - b'0'
+                                <= self.setting_value("nrLayerCount") as u8)
                     {
                         col = col.child(Self::button(
                             i + 1,
