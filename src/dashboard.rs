@@ -41,13 +41,14 @@ impl Portal {
         if !matches!(self.status, 2..=3) {
             return div();
         }
-        if fg && self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND {
+        if fg && self.setting_value("frameGenerationBackend") as u32 >= super_motion::FIRST_EXTERNAL
+        {
             let label = if !self.motion.status.is_empty() {
                 self.motion.status.as_str()
             } else if self.setting_value("multiplier") <= 1. {
-                "Super Motion desligado"
+                "Next Boost desligado"
             } else {
-                "Super Motion preparado · abra a transmissão"
+                "Next Boost preparado · abra a transmissão"
             };
             return div()
                 .text_sm()
@@ -95,7 +96,8 @@ impl Portal {
             "antiAlias.enabled" => ("Antisserrilhamento", (status >> 8 & 1) as u32),
             "antiAlias.method" => ("Filtro", (status >> 9 & 3) as u32),
             "multiplier"
-                if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND =>
+                if self.setting_value("frameGenerationBackend") as u32
+                    >= super_motion::FIRST_EXTERNAL =>
             {
                 if self.motion.status.starts_with("Falha")
                     || self.motion.status.contains("encerrou")
@@ -265,7 +267,7 @@ impl Portal {
         }) {
             let value = self.values[i];
             let applicable = match field.path {
-                _ if group == "Frame Generation" && backend == super_motion::BACKEND => {
+                _ if group == "Frame Generation" && backend >= super_motion::FIRST_EXTERNAL => {
                     matches!(field.path, "frameGenerationBackend" | "multiplier")
                 }
                 "vfgQuality" | "vfgAutoRegulate" => backend == 4,
@@ -282,9 +284,44 @@ impl Portal {
             if !applicable {
                 continue;
             }
+            let external = backend >= super_motion::FIRST_EXTERNAL;
+            if field.path == "frameGenerationBackend" {
+                body = body.child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .items_center()
+                        .child("Modo de aplicação")
+                        .child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .child(Self::button(
+                                    31000,
+                                    if external { "Interno" } else { "Interno ✓" },
+                                    Action::ChooseSetting(i, if external { 4. } else { value }),
+                                    cx,
+                                ))
+                                .child(Self::button(
+                                    31001,
+                                    if external {
+                                        "Captura Next Boost ✓"
+                                    } else {
+                                        "Captura Next Boost"
+                                    },
+                                    Action::ChooseSetting(i, if external { value } else { 9. }),
+                                    cx,
+                                )),
+                        ),
+                );
+            }
             let (label, options): (&str, &[&str]) = match field.path {
+                "frameGenerationBackend" if external => (
+                    "Gerador",
+                    &["Super Motion (SMFG)", "NVIDIA DLSS MFG", "Intel XeSS MFG"],
+                ),
                 "frameGenerationBackend" => (
-                    "Método",
+                    "Gerador",
                     &[
                         "NVIDIA DLSS FG",
                         "Intel XeSS FG",
@@ -295,7 +332,6 @@ impl Portal {
                         "AMD FRC",
                         "RIFE",
                         "XeFG XMX",
-                        "Super Motion (Next Boost)",
                     ],
                 ),
                 "fgMotion" | "nrMotion" | "srMotion" => (
@@ -409,7 +445,12 @@ impl Portal {
                     cx,
                 ));
             } else if !options.is_empty() {
-                let selected = (value - field.min) as usize;
+                let min = if field.path == "frameGenerationBackend" && external {
+                    super_motion::FIRST_EXTERNAL as f32
+                } else {
+                    field.min
+                };
+                let selected = (value - min) as usize;
                 row = row.child(Self::button(
                     i * 2 + 1,
                     format!(
@@ -433,7 +474,7 @@ impl Portal {
                         menu = menu.child(Self::button(
                             20_000 + i * 16 + option,
                             format!("{label}{marker}"),
-                            Action::ChooseSetting(i, field.min + option as f32),
+                            Action::ChooseSetting(i, min + option as f32),
                             cx,
                         ));
                     }
@@ -565,14 +606,14 @@ impl Portal {
             )
             .child(nav);
         if page == Page::Stream && matches!(self.status, 1..=3) {
-            if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND {
+            if self.setting_value("frameGenerationBackend") as u32 >= super_motion::FIRST_EXTERNAL {
                 rail = rail
                     .child(div().p_2().child(Self::button(
                         801,
                         if self.setting_value("multiplier") > 1. {
-                            "Desligar Super Motion"
+                            "Desligar Next Boost"
                         } else {
-                            "Ligar Super Motion"
+                            "Ligar Next Boost"
                         },
                         Action::ToggleFg,
                         cx,

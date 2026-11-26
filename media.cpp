@@ -224,7 +224,7 @@ API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
         if(i!=count)return false;
         // Super Motion consumes the final presented image. Only one engine interpolates.
         const auto requestedMultiplier=q.multiplier;
-        bool superMotion=static_cast<int>(q.frameGenerationBackend)==9;
+        bool superMotion=static_cast<int>(q.frameGenerationBackend)>=9;
         if(superMotion){
             q.frameGenerationBackend=engine::EnhancementSettings{}.frameGenerationBackend;
             q.multiplier=1;

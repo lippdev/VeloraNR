@@ -267,7 +267,7 @@ impl Portal {
                             let wanted = if p.page == Page::Stream
                                 && state == 2
                                 && p.status == 2
-                                && p.values[backend_index] as u32 == super_motion::BACKEND
+                                && p.values[backend_index] as u32 >= super_motion::FIRST_EXTERNAL
                                 && effects & 15 <= 1
                                 && p.values[multiplier_index] >= 2.
                             {
@@ -280,9 +280,12 @@ impl Portal {
                             } else {
                                 0
                             };
-                            if p.motion
-                                .tick(&root, hwnd, if hwnd == 0 { 0 } else { wanted })
-                            {
+                            if p.motion.tick(
+                                &root,
+                                hwnd,
+                                if hwnd == 0 { 0 } else { wanted },
+                                p.values[backend_index] as u32,
+                            ) {
                                 cx.notify();
                             }
                             if effects != p.effect_status {
@@ -609,14 +612,16 @@ impl Portal {
                 ));
                 self.feedback = None;
                 self.feedback_text.clear();
-                if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND
-                    && super_motion::engine().is_none()
+                if self.setting_value("frameGenerationBackend") as u32
+                    >= super_motion::FIRST_EXTERNAL
+                    && super_motion::runtime(self.setting_value("frameGenerationBackend") as u32)
+                        .is_err()
                     && (f.path == "frameGenerationBackend"
                         || (f.path == "multiplier" && self.values[i] > 1.))
                 {
                     self.values = old;
                     self.notice =
-                        "Instale o pacote Super Motion do VeloraNR para usar esse método.".into();
+                        "Instale o pacote Next Boost correspondente ao gerador para usar esse método.".into();
                     cx.notify();
                     return;
                 }
