@@ -3,17 +3,17 @@ mod discovery;
 mod pairing;
 mod quality;
 
-const BACKGROUND: u32 = 0x101820;
-const PANEL: u32 = 0x1b2835;
-const TEXT: u32 = 0xedf2fa;
-const MUTED: u32 = 0xaab9ca;
-const BUTTON: u32 = 0x26374a;
-const BUTTON_HOVER: u32 = 0x354e67;
-const ACCENT: u32 = 0x2761b5;
-const ACCENT_HOVER: u32 = 0x3674ce;
-const BORDER: u32 = 0x43566c;
-const FOCUS: u32 = 0xaecbff;
-const SIDEBAR: i32 = 325;
+const BACKGROUND: u32 = 0x101113;
+const PANEL: u32 = 0x202124;
+const TEXT: u32 = 0xf0efec;
+const MUTED: u32 = 0xb4b3b0;
+const BUTTON: u32 = 0x2b2c30;
+const BUTTON_HOVER: u32 = 0x35363a;
+const ACCENT: u32 = 0xe8e7e3;
+const ACCENT_HOVER: u32 = 0xffffff;
+const BORDER: u32 = 0x36373b;
+const FOCUS: u32 = 0xe1e1dd;
+const SIDEBAR: i32 = 224;
 const BITRATES: [u32; 9] = [1, 5, 10, 15, 20, 30, 50, 80, 100];
 const DEFAULT_BITRATE: u32 = 15;
 use gpui::{prelude::*, *};
@@ -39,9 +39,14 @@ impl Drop for Media {
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Login,
+    Stream,
+    Network,
+    About,
     Session,
     Pair,
     Quality,
+    Dlss,
+    FrameGen,
     Group(&'static str),
 }
 #[derive(Clone, Copy)]
@@ -51,6 +56,11 @@ enum Action {
     SelectConsole(usize),
     Page(Page),
     Edit(usize),
+    AccountHelp,
+    ToggleFg,
+    SettingMenu(usize),
+    ChooseSetting(usize, f32),
+    ManualPair,
     Pair,
     Connect,
     Stop,
@@ -60,12 +70,14 @@ enum Action {
     Bitrate(u32),
 }
 struct Portal {
+    logo: std::sync::Arc<Image>,
     media: Media,
     profile: PathBuf,
     quality_file: PathBuf,
     bitrate_file: PathBuf,
     bitrate: u32,
     bitrate_menu_open: bool,
+    setting_menu: Option<usize>,
     fields: Vec<quality::Field>,
     values: Vec<f32>,
     page: Page,
@@ -73,6 +85,7 @@ struct Portal {
     selected: usize,
     busy: bool,
     status: i32,
+    effect_status: i32,
     notice: String,
     focus: FocusHandle,
     discovery: discovery::State,
@@ -130,6 +143,7 @@ impl Portal {
                     }
                 }
             }
+            quality::normalize(&fields, &mut values);
             if !unsafe { portal_quality(media.0, values.as_ptr(), values.len()) } {
                 values = fields.iter().map(|f| f.initial).collect();
                 if !unsafe { portal_quality(media.0, values.as_ptr(), values.len()) } {
@@ -149,9 +163,15 @@ impl Portal {
                                 portal_tick(
                                     p.media.0,
                                     SIDEBAR,
-                                    !p.page.is_dialog() && matches!(p.status, 1..=3),
+                                    p.page == Page::Stream && matches!(p.status, 2..=3),
                                 )
                             };
+                            let effects = state >> 8;
+                            let state = state & 0xff;
+                            if effects != p.effect_status {
+                                p.effect_status = effects;
+                                cx.notify();
+                            }
                             if state != p.status {
                                 p.status = state;
                                 if state == 7 {
@@ -159,7 +179,7 @@ impl Portal {
                                     p.selected = 2;
                                     p.inputs[2].clear();
                                 } else if p.page == Page::Login {
-                                    p.page = Page::Session;
+                                    p.page = Page::Stream;
                                 }
                                 cx.notify();
                             }
@@ -173,12 +193,17 @@ impl Portal {
         })
         .detach();
         let mut portal = Self {
+            logo: std::sync::Arc::new(Image::from_bytes(
+                ImageFormat::Png,
+                include_bytes!("../assets/logo/veloranr-logo.png").to_vec(),
+            )),
             media,
             profile,
             quality_file,
             bitrate_file,
             bitrate,
             bitrate_menu_open: false,
+            setting_menu: None,
             fields,
             values,
             page: Page::Session,
@@ -186,6 +211,7 @@ impl Portal {
             selected: 0,
             busy: false,
             status: 0,
+            effect_status: 0,
             notice,
             focus: cx.focus_handle(),
             discovery: discovery::State::Searching,
@@ -211,13 +237,46 @@ impl Portal {
         if !matches!(action, Action::ToggleBitrateMenu) {
             self.bitrate_menu_open = false;
         }
+        if !matches!(action, Action::SettingMenu(_)) {
+            self.setting_menu = None;
+        }
         let file: Vec<u16> = self
             .profile
             .as_os_str()
             .encode_wide()
             .chain(Some(0))
             .collect();
+        let action = if let Action::ChooseSetting(i, value) = action {
+            Action::Change(i, (value - self.values[i]) / self.fields[i].step)
+        } else if matches!(action, Action::ToggleFg) {
+            let i = self
+                .fields
+                .iter()
+                .position(|f| f.path == "multiplier")
+                .unwrap();
+            Action::Change(
+                i,
+                if self.values[i] > 1. {
+                    1. - self.values[i]
+                } else {
+                    1.
+                },
+            )
+        } else {
+            action
+        };
         match action {
+            Action::ToggleFg | Action::ChooseSetting(..) => unreachable!(),
+            Action::SettingMenu(i) => {
+                self.setting_menu = (self.setting_menu != Some(i)).then_some(i)
+            }
+            Action::ManualPair => {
+                self.inputs[0].clear();
+                self.selected = 0;
+                self.page = Page::Pair;
+                self.focus.focus(w);
+            }
+            Action::AccountHelp => cx.open_url("https://pyrosoft.pro/psnid/"),
             Action::Scan => {
                 if !matches!(self.discovery, discovery::State::Searching) {
                     self.scan(cx);
@@ -237,7 +296,14 @@ impl Portal {
             }
             Action::Page(page) => {
                 if page == Page::Pair {
-                    self.selected = 0;
+                    self.selected = if let discovery::State::Found(consoles) = &self.discovery
+                        && consoles.len() == 1
+                    {
+                        self.inputs[0].clone_from(&consoles[0].address);
+                        1
+                    } else {
+                        0
+                    };
                 }
                 if page == Page::Session && self.page.is_dialog() {
                     self.inputs[2].clear();
@@ -298,6 +364,8 @@ impl Portal {
                     self.notice = "Falha ao acessar o PS5.".into()
                 } else if wake {
                     self.notice = "Comando enviado.".into()
+                } else {
+                    self.page = Page::Stream
                 }
             }
             Action::Stop => unsafe { portal_stop(self.media.0) },
@@ -312,11 +380,13 @@ impl Portal {
             }
             Action::Change(i, d) => {
                 let f = &self.fields[i];
-                let old = self.values[i];
-                self.values[i] = ((old + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
+                let old = self.values.clone();
+                self.values[i] =
+                    ((old[i] + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
+                quality::normalize(&self.fields, &mut self.values);
                 if !unsafe { portal_quality(self.media.0, self.values.as_ptr(), self.values.len()) }
                 {
-                    self.values[i] = old;
+                    self.values = old;
                     self.notice = "Combinação de parâmetros inválida.".into();
                 } else {
                     let saved: std::collections::BTreeMap<_, _> = self
@@ -337,7 +407,8 @@ impl Portal {
         cx.notify();
     }
     fn input(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.bitrate_menu_open && e.keystroke.key == "escape" {
+        if (self.bitrate_menu_open || self.setting_menu.is_some()) && e.keystroke.key == "escape" {
+            self.setting_menu = None;
             self.bitrate_menu_open = false;
             cx.stop_propagation();
             cx.notify();
@@ -393,9 +464,9 @@ impl Portal {
         text: T,
         act: Action,
         cx: &Context<Self>,
-    ) -> impl IntoElement + use<T> {
+    ) -> Stateful<Div> {
         let (base, hover) = match act {
-            Action::Connect | Action::Login | Action::Pair | Action::SelectConsole(_) => {
+            Action::Connect | Action::Login | Action::Pair | Action::Page(Page::Pair) => {
                 (ACCENT, ACCENT_HOVER)
             }
             Action::Page(Page::Session | Page::Quality) | Action::Scan => (PANEL, BUTTON),
@@ -404,10 +475,14 @@ impl Portal {
         div()
             .id(("action", id))
             .px_3()
-            .py_2()
-            .rounded_md()
+            .when(matches!(act, Action::ChooseSetting(..)), |d| {
+                d.py_0p5().text_sm()
+            })
+            .when(!matches!(act, Action::ChooseSetting(..)), |d| d.py_2())
+            .rounded_lg()
             .border_1()
-            .border_color(rgb(base))
+            .border_color(rgb(if base == ACCENT { ACCENT } else { BORDER }))
+            .text_color(rgb(if base == ACCENT { BACKGROUND } else { TEXT }))
             .bg(rgb(base))
             .hover(move |style| style.bg(rgb(hover)))
             .focusable()
@@ -425,7 +500,7 @@ impl Portal {
     fn dialog(&self, cx: &Context<Self>) -> AnyElement {
         let pairing = self.page == Page::Pair;
         let title = if pairing {
-            "Parear PS5"
+            "Vincular console"
         } else {
             "PIN de login do PS5"
         };
@@ -437,7 +512,7 @@ impl Portal {
         );
         if pairing {
             body = body.child(div().text_sm().text_color(rgb(MUTED)).child(
-                "No PS5, abra Configurações → Sistema → Uso remoto → Vincular dispositivo.",
+                "No PS5, abra Configurações → Sistema → Uso remoto. Ative o Uso remoto e escolha Vincular dispositivo.",
             ));
         }
         let fields = [
@@ -467,7 +542,7 @@ impl Portal {
                         .id(("input", i))
                         .px_3()
                         .py_2()
-                        .rounded_md()
+                        .rounded_lg()
                         .border_1()
                         .border_color(rgb(if self.selected == i { FOCUS } else { BORDER }))
                         .bg(rgb(BACKGROUND))
@@ -477,6 +552,14 @@ impl Portal {
                         .on_click(cx.listener(move |p, _, w, cx| p.act(Action::Edit(i), w, cx))),
                 ),
             );
+        }
+        if pairing {
+            body = body.child(Self::button(
+                1002,
+                "Encontrar meu Account ID no Pyrosoft ↗",
+                Action::AccountHelp,
+                cx,
+            ));
         }
         if !self.notice.is_empty() {
             body = body.child(div().text_sm().child(self.notice.clone()));
@@ -497,7 +580,7 @@ impl Portal {
                     .child(Self::button(
                         1001,
                         if pairing {
-                            "Parear console"
+                            "Vincular console"
                         } else {
                             "Enviar PIN"
                         },
@@ -512,7 +595,7 @@ impl Portal {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgba(0x060a10c9))
+            .bg(rgba(0x000000cc))
             .child(
                 div()
                     .id("console-dialog")
@@ -530,163 +613,115 @@ impl Portal {
             .into_any_element()
     }
 }
+mod dashboard;
 impl Render for Portal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.page.is_dialog() && !self.focus.contains_focused(window, cx) {
             self.focus.focus(window);
         }
-        let mut col = div()
-            .id("controls")
-            .h_full()
-            .overflow_y_scroll()
-            .w(px(SIDEBAR as f32))
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p_3()
-            .child(
-                div()
-                    .text_xl()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("VeloraNR"),
-            );
-        match if self.page.is_dialog() {
+        let page = if self.page.is_dialog() {
             Page::Session
         } else {
             self.page
-        } {
+        };
+        let live = matches!(self.status, 1..=3);
+        let mut col = div()
+            .id("content")
+            .min_w_0()
+            .flex_1()
+            .h_full()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .px_8()
+            .py_6();
+        match page {
             Page::Pair | Page::Login => unreachable!(),
             Page::Session => {
-                let paired = self.profile.is_file();
-                col = col.child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(MUTED))
-                        .child(match self.status {
-                            1 => "Conectando ao PS5…",
-                            2 => "Remote Play em reprodução",
-                            3 => "Remote Play pausado",
-                            5 => "Desconectando…",
-                            6 => "Falha na sessão",
-                            _ if paired => "PS5 pareado",
-                            _ => "Configure seu PS5 para começar",
-                        }),
-                );
-                col = col.child(div().mt_2().text_sm().child("Bitrate solicitado (Mbps)"));
-                if matches!(self.status, 1..=3) {
-                    col = col.child(format!("{} Mbps", self.bitrate));
-                } else {
-                    let indicator = if self.bitrate_menu_open { "▴" } else { "▾" };
-                    col = col.child(Self::button(
-                        6,
-                        format!("{} Mbps  {indicator}", self.bitrate),
-                        Action::ToggleBitrateMenu,
-                        cx,
-                    ));
-                    if self.bitrate_menu_open {
-                        let mut menu = div()
-                            .id("bitrate-options")
-                            .flex_shrink_0()
-                            .p_1()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(rgb(BORDER))
-                            .bg(rgb(PANEL));
-                        for (index, bitrate) in BITRATES.into_iter().enumerate() {
-                            let marker = if bitrate == self.bitrate { "  ✓" } else { "" };
-                            menu = menu.child(Self::button(
-                                100 + index,
-                                format!("{bitrate} Mbps{marker}"),
-                                Action::Bitrate(bitrate),
-                                cx,
-                            ));
-                        }
-                        col = col.child(menu);
-                    }
-                }
-                if matches!(self.status, 1..=3) {
-                    col = col.child(Self::button(1, "Desconectar", Action::Stop, cx));
-                } else if paired {
-                    col = col
-                        .child(Self::button(
-                            0,
-                            "Conectar ao PS5 pareado",
-                            Action::Connect,
-                            cx,
-                        ))
-                        .child(Self::button(2, "Acordar PS5 pareado", Action::Wake, cx));
-                }
-                col = col.child(
-                    div()
-                        .mt_3()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child("Consoles na rede"),
-                );
-                match &self.discovery {
-                    discovery::State::Searching => {
-                        col = col.child("Buscando PS5 na rede local…");
-                    }
-                    discovery::State::Found(consoles) => {
-                        for (index, console) in consoles.iter().enumerate() {
-                            let status = if console.standby {
-                                "Em repouso"
-                            } else {
-                                "Ligado"
-                            };
-                            col = col.child(Self::button(
-                                20 + index,
-                                format!("{} ({status})", console.address),
-                                Action::SelectConsole(index),
-                                cx,
-                            ));
-                        }
-                        col = col.child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(MUTED))
-                                .child("Escolha o PS5 que deseja parear."),
-                        );
-                    }
-                    discovery::State::Empty => {
-                        col = col.child("Nenhum PS5 encontrado. Confira se o console está ligado e na mesma rede.");
-                    }
-                    discovery::State::Failed(code) => {
-                        col = col.child(format!("A busca na rede falhou ({code})."));
-                    }
-                }
-                if !matches!(self.discovery, discovery::State::Searching) {
-                    col = col.child(Self::button(5, "Buscar novamente", Action::Scan, cx));
-                }
-                col = col
-                    .child(Self::button(
-                        3,
-                        "Informar IP manualmente",
-                        Action::Page(Page::Pair),
-                        cx,
-                    ))
-                    .child(div().mt_3().child(Self::button(
-                        4,
-                        "Qualidade de imagem",
-                        Action::Page(Page::Quality),
-                        cx,
-                    )));
-            }
-            Page::Quality => {
-                col = col.child(Self::button(
-                    0,
-                    "Voltar ao console",
-                    Action::Page(Page::Session),
-                    cx,
+                col = col.child(Self::page_header(
+                    "Remote Play",
+                    "Conecte-se ao seu PlayStation 5.",
                 ));
+                let cards = div()
+                    .flex()
+                    .gap_3()
+                    .when(window.viewport_size().width < px(900.), |d| d.flex_col())
+                    .child(self.console_card(cx).flex_1())
+                    .child(self.streaming_card(cx).flex_1());
+                col = col.child(cards).child(self.network_card(cx));
+            }
+            Page::Stream => {
+                if self.status == 1 {
+                    col = col.child(Self::page_header(
+                        "Conectando ao PS5…",
+                        "A imagem aparece assim que o console iniciar a transmissão.",
+                    ));
+                } else if !live {
+                    col = col
+                        .child(self.console_card(cx))
+                        .child(self.streaming_card(cx));
+                }
+            }
+            Page::Network => {
+                col = col
+                    .child(Self::heading("Configurações"))
+                    .child(self.network_card(cx));
+            }
+            Page::About => {
+                col = col.child(Self::heading("Sobre")).child(Self::card(
+                    "VeloraNR",
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child("Remote Play para PlayStation 5")
+                        .child(format!("Versão {}", env!("CARGO_PKG_VERSION"))),
+                ));
+            }
+            Page::Quality | Page::Dlss | Page::FrameGen => {
+                let (title, subtitle) = match page {
+                    Page::Dlss => (
+                        "DLSS 5",
+                        "Ajuste o processamento neural e as camadas de DLSS NR.",
+                    ),
+                    Page::FrameGen => (
+                        "Frame Generation",
+                        "Escolha o método e o multiplicador para a geração de quadros.",
+                    ),
+                    _ => (
+                        "Qualidade de imagem",
+                        "Ajuste o antisserrilhamento, a redução de ruído e os demais efeitos.",
+                    ),
+                };
+                col = col.child(Self::page_header(title, subtitle));
+                if page == Page::Dlss {
+                    col = col
+                        .child(self.effect_health(false))
+                        .child(self.effect_settings("DLSS NR", cx));
+                }
+                if page == Page::FrameGen {
+                    col = col
+                        .child(self.effect_health(true))
+                        .child(self.effect_settings("Frame Generation", cx));
+                }
                 let mut last = "";
                 for (i, f) in self.fields.iter().enumerate() {
-                    if f.group != last {
+                    if f.group != last
+                        && Self::effect_page(f.group) == page
+                        && page != Page::FrameGen
+                        && f.group != "DLSS NR"
+                        && (!f.group.starts_with("Camada NR ")
+                            || f.group.as_bytes().last().unwrap() - b'0'
+                                <= self.setting_value("nrLayerCount") as u8)
+                    {
                         col = col.child(Self::button(
                             i + 1,
-                            f.group,
+                            if f.group == "Ruído e AA" {
+                                "Antisserrilhamento e redução de ruído"
+                            } else {
+                                f.group
+                            },
                             Action::Page(Page::Group(f.group)),
                             cx,
                         ));
@@ -699,36 +734,10 @@ impl Render for Portal {
                     .child(Self::button(
                         0,
                         "Voltar à qualidade",
-                        Action::Page(Page::Quality),
+                        Action::Page(Self::effect_page(group)),
                         cx,
                     ))
-                    .child(group);
-                for (i, f) in self
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, f)| f.group == group)
-                {
-                    let v = self.values[i];
-                    let toggle = f.min == 0. && f.max == 1. && f.step == 1.;
-                    if toggle {
-                        col = col.child(Self::button(
-                            i * 2 + 1,
-                            format!("{} {}", if v == 0. { "○" } else { "✓" }, f.label),
-                            Action::Change(i, if v == 0. { 1. } else { -1. }),
-                            cx,
-                        ));
-                    } else {
-                        col = col.child(f.label).child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(Self::button(i * 2 + 1, "−", Action::Change(i, -1.), cx))
-                                .child(format!("{v:.2}"))
-                                .child(Self::button(i * 2 + 2, "+", Action::Change(i, 1.), cx)),
-                        );
-                    }
-                }
+                    .child(self.effect_settings(group, cx));
             }
         }
         let dialog = self.page.is_dialog();
@@ -739,11 +748,16 @@ impl Render for Portal {
             .size_full()
             .bg(rgb(BACKGROUND))
             .text_color(rgb(TEXT))
-            .when(!dialog, |root| {
-                root.child(col.when(!self.notice.is_empty(), |col| {
-                    col.child(self.notice.clone())
-                }))
-            })
+            .font_family("Instrument Sans")
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .child(self.navigation(page, cx))
+                    .child(col.when(!self.notice.is_empty(), |col| {
+                        col.child(self.notice.clone())
+                    })),
+            )
             .when(dialog, |root| root.child(self.dialog(cx)))
     }
 }
@@ -751,7 +765,12 @@ fn main() {
     // GPUI's DirectComposition surface can cover the native DXGI child.
     // Set the renderer mode before GPUI starts any threads.
     unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
-    Application::new().run(|cx| {
+    Application::new().with_assets(dashboard::Assets).run(|cx| {
+        cx.text_system()
+            .add_fonts(vec![std::borrow::Cow::Borrowed(include_bytes!(
+                "../assets/InstrumentSans.ttf"
+            ))])
+            .expect("carregar Instrument Sans");
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit()

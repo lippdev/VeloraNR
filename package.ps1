@@ -20,7 +20,7 @@ foreach ($name in 'avcodec-63.dll','avformat-63.dll','avutil-61.dll','avfilter-1
     $file = Join-Path $RuntimeAssets $name
     if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $Destination -Force }
 }
-foreach ($name in 'shaders','runtime/models','runtime/experimental/nr-ampere') {
+foreach ($name in 'shaders','runtime/models','runtime/config','runtime/experimental/nr-ampere') {
     $dir = Join-Path $Destination $name
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets $name) | Copy-Item -Destination $dir -Recurse -Force
@@ -30,3 +30,18 @@ foreach ($name in 'nvngx_vsr.dll','nvngx_dlss.dll','nvngx_truehdr.dll') {
 }
 Copy-Item -LiteralPath (Join-Path $RuntimeAssets 'LICENSE'),(Join-Path $RuntimeAssets 'THIRD_PARTY_NOTICES.md') -Destination $Destination -Force
 Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets 'licenses') | Copy-Item -Destination $licenses -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $project 'prototypes/fonts/OFL-Instrument-Sans.txt') -Destination $licenses -Force
+
+# Keep each supplied frame-generation runtime in the directory its loader uses.
+foreach ($name in 'runtime/nvidia-vfg','runtime/experimental/dlssg-kernels','runtime/experimental/dlssg-lite','runtime/experimental/fallback-dlssg-310.7','runtime_local/intel','runtime_local/amd') {
+    $source = Join-Path $RuntimeAssets $name
+    if (Test-Path -LiteralPath $source -PathType Container) {
+        $target = Join-Path $Destination $name
+        New-Item -ItemType Directory -Force $target | Out-Null
+        Get-ChildItem -LiteralPath $source | Copy-Item -Destination $target -Recurse -Force
+    }
+}
+$dlssg = Join-Path $RuntimeAssets 'runtime/experimental/nvngx_dlssg.dll'
+if (Test-Path -LiteralPath $dlssg -PathType Leaf) {
+    Copy-Item -LiteralPath $dlssg -Destination $experimental -Force
+}
