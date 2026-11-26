@@ -14,6 +14,8 @@ const ACCENT: u32 = 0xe8e7e3;
 const ACCENT_HOVER: u32 = 0xffffff;
 const BORDER: u32 = 0x36373b;
 const FOCUS: u32 = 0xe1e1dd;
+const QUICK_WIDTH: i32 = 320;
+const EDGE: i32 = 12;
 const SIDEBAR: i32 = 224;
 const BITRATES: [u32; 9] = [1, 5, 10, 15, 20, 30, 50, 80, 100];
 const DEFAULT_BITRATE: u32 = 15;
@@ -28,6 +30,7 @@ unsafe extern "C" {
     fn portal_preview(media: *mut c_void, file: *const u16) -> bool;
     fn portal_capture_window(media: *mut c_void) -> isize;
     fn portal_stop(media: *mut c_void);
+    fn portal_pointer_x(media: *mut c_void) -> i32;
     fn portal_tick(media: *mut c_void, width: i32, show: bool) -> i32;
     fn portal_quality(media: *mut c_void, values: *const f32, count: usize) -> bool;
 }
@@ -54,6 +57,8 @@ enum Page {
 }
 #[derive(Clone, Copy)]
 enum Action {
+    CloseQuick,
+    Fullscreen,
     Login,
     Scan,
     SelectConsole(usize),
@@ -80,6 +85,8 @@ struct Portal {
     quality_file: PathBuf,
     bitrate_file: PathBuf,
     bitrate: u32,
+    quick_open: bool,
+    previous_x: i32,
     previous_multiplier: f32,
     bitrate_menu_open: bool,
     setting_menu: Option<usize>,
@@ -188,10 +195,35 @@ impl Portal {
                 if this
                     .update(cx, |p, cx| {
                         if !p.media.0.is_null() {
+                            let playing = p.page == Page::Stream && matches!(p.status, 2..=3);
+                            if playing {
+                                let x = unsafe { portal_pointer_x(p.media.0) };
+                                if x != p.previous_x {
+                                    let open = if p.quick_open {
+                                        (0..QUICK_WIDTH + 20).contains(&x)
+                                    } else {
+                                        (0..EDGE).contains(&x) && !(0..EDGE).contains(&p.previous_x)
+                                    };
+                                    p.previous_x = x;
+                                    if open != p.quick_open {
+                                        p.quick_open = open;
+                                        p.setting_menu = None;
+                                        cx.notify();
+                                    }
+                                }
+                            } else {
+                                p.quick_open = false;
+                                p.previous_x = -1;
+                            }
+                            let sidebar = if playing {
+                                if p.quick_open { QUICK_WIDTH } else { 0 }
+                            } else {
+                                SIDEBAR
+                            };
                             let state = unsafe {
                                 portal_tick(
                                     p.media.0,
-                                    SIDEBAR,
+                                    sidebar,
                                     p.page == Page::Stream && matches!(p.status, 2..=3),
                                 )
                             };
@@ -253,6 +285,8 @@ impl Portal {
             quality_file,
             bitrate_file,
             bitrate,
+            quick_open: false,
+            previous_x: -1,
             previous_multiplier: 2.,
             bitrate_menu_open: false,
             setting_menu: None,
@@ -326,6 +360,15 @@ impl Portal {
         };
         match action {
             Action::ToggleFg | Action::ChooseSetting(..) => unreachable!(),
+            Action::CloseQuick => {
+                self.quick_open = false;
+                self.focus.focus(w);
+            }
+            Action::Fullscreen => {
+                w.toggle_fullscreen();
+                self.quick_open = false;
+                self.focus.focus(w);
+            }
             Action::SettingMenu(i) => {
                 self.setting_menu = (self.setting_menu != Some(i)).then_some(i)
             }
@@ -354,6 +397,9 @@ impl Portal {
                 }
             }
             Action::Page(page) => {
+                if self.page == Page::Stream && page != Page::Stream && w.is_fullscreen() {
+                    w.toggle_fullscreen();
+                }
                 if page == Page::Pair {
                     self.selected = if let discovery::State::Found(consoles) = &self.discovery
                         && consoles.len() == 1
@@ -427,7 +473,12 @@ impl Portal {
                     self.page = Page::Stream
                 }
             }
-            Action::Stop => unsafe { portal_stop(self.media.0) },
+            Action::Stop => {
+                if w.is_fullscreen() {
+                    w.toggle_fullscreen();
+                }
+                unsafe { portal_stop(self.media.0) }
+            }
             Action::ToggleBitrateMenu => {
                 self.bitrate_menu_open = !self.bitrate_menu_open;
             }
@@ -482,6 +533,26 @@ impl Portal {
             self.bitrate_menu_open = false;
             cx.stop_propagation();
             cx.notify();
+            return;
+        }
+        if window.is_fullscreen() && !self.quick_open && e.keystroke.key == "escape" {
+            window.toggle_fullscreen();
+            cx.stop_propagation();
+            return;
+        }
+        if self.page == Page::Stream && matches!(self.status, 2..=3) {
+            match e.keystroke.key.as_str() {
+                "f11" => self.act(Action::Fullscreen, window, cx),
+                "escape" if self.quick_open => self.act(Action::CloseQuick, window, cx),
+                "escape" if window.is_fullscreen() => self.act(Action::Fullscreen, window, cx),
+                "f10" => {
+                    self.quick_open = !self.quick_open;
+                    self.setting_menu = None;
+                    cx.notify();
+                }
+                _ => return,
+            }
+            cx.stop_propagation();
             return;
         }
         if !matches!(self.page, Page::Pair | Page::Login) || self.busy {
@@ -686,7 +757,9 @@ impl Portal {
 mod dashboard;
 impl Render for Portal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.page.is_dialog() && !self.focus.contains_focused(window, cx) {
+        if (self.page.is_dialog() || self.page == Page::Stream)
+            && !self.focus.contains_focused(window, cx)
+        {
             self.focus.focus(window);
         }
         let page = if self.page.is_dialog() {
@@ -711,7 +784,7 @@ impl Render for Portal {
             Page::Session => {
                 col = col.child(Self::page_header(
                     "Remote Play",
-                    "Conecte-se ao seu PlayStation 5.",
+                    "Durante o jogo, mova o mouse à borda esquerda para abrir os ajustes rápidos.",
                 ));
                 let cards = div()
                     .flex()
@@ -823,7 +896,14 @@ impl Render for Portal {
                 div()
                     .size_full()
                     .flex()
-                    .child(self.navigation(page, cx))
+                    .when(
+                        page != Page::Stream || !matches!(self.status, 2..=3),
+                        |row| row.child(self.navigation(page, cx)),
+                    )
+                    .when(
+                        page == Page::Stream && matches!(self.status, 2..=3) && self.quick_open,
+                        |row| row.child(self.quick_panel(window, cx)),
+                    )
                     .child(col.when(!self.notice.is_empty(), |col| {
                         col.child(self.notice.clone())
                     })),
