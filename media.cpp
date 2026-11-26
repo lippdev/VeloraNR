@@ -75,9 +75,11 @@ API bool portal_pair_finish(Registration* r,const wchar_t* profile) noexcept {
         return remoteplay::saveProfile(profile,r->saved);
     }catch(...){return false;}
 }
-API int portal_open(Player* p,const wchar_t* profile,bool wake) noexcept {
+API int portal_open(Player* p,const wchar_t* profile,bool wake,uint32_t bitrateKbps) noexcept {
     try {auto saved=remoteplay::loadProfile(profile);if(!saved)return -1;
         if(wake)return remoteplay::wakeLocalPs5(*saved).ok?0:-2;
+        saved->video.bitrateKbps=bitrateKbps;
+        if(saved->video.validate())return -4;
         source::RemotePlayConnectDesc desc;desc.request=std::move(*saved);
         if(!p->padStarted)p->padStarted=p->pad.start();
         p->engine.openRemotePlay(p->video,std::move(desc),engine::PlayerOptions::from(p->quality));return 0;

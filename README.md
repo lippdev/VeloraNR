@@ -10,7 +10,7 @@ A interface precisa de Rust MSVC e de `portal_media.lib`. Defina `PORTAL_NATIVE_
 ./package.ps1 -NativeBuild 'C:/build/portal-native' -RuntimeAssets 'C:/build/media-assets'
 ```
 
-O executável fica em `dist/portal-ps5.exe`. Mantenha as DLLs, os shaders e os modelos ao lado dele na estrutura criada pelo script.
+O executável fica em `dist/veloranr.exe`. Mantenha as DLLs, os shaders e os modelos ao lado dele na estrutura criada pelo script.
 
 A camada nativa atual usa Chiaki, FFmpeg, SDL e o motor D3D12 em C++. O repositório publica o código do MVP e a ponte `media.cpp`. Para recompilar a ponte, o ambiente de origem precisa fornecer `veyra_engine`, `chiaki-lib`, `SDL3::SDL3-static` e `src/remoteplay/ControllerInput.cpp`. O checkout público ainda depende desse build nativo externo. As DLLs, os modelos e o runtime NVIDIA são fornecidos localmente. A reprodução completa no PS5 ainda precisa ser validada.
 

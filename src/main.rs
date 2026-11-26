@@ -14,6 +14,8 @@ const ACCENT_HOVER: u32 = 0x3674ce;
 const BORDER: u32 = 0x43566c;
 const FOCUS: u32 = 0xaecbff;
 const SIDEBAR: i32 = 325;
+const BITRATES: [u32; 9] = [1, 5, 10, 15, 20, 30, 50, 80, 100];
+const DEFAULT_BITRATE: u32 = 15;
 use gpui::{prelude::*, *};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::PathBuf, time::Duration};
@@ -21,7 +23,7 @@ unsafe extern "C" {
     fn portal_login(media: *mut c_void, pin: *const std::ffi::c_char);
     fn portal_new(parent: isize, log: *const u16) -> *mut c_void;
     fn portal_free(media: *mut c_void);
-    fn portal_open(media: *mut c_void, file: *const u16, wake: bool) -> i32;
+    fn portal_open(media: *mut c_void, file: *const u16, wake: bool, bitrate_kbps: u32) -> i32;
     fn portal_stop(media: *mut c_void);
     fn portal_tick(media: *mut c_void, width: i32, show: bool) -> i32;
     fn portal_quality(media: *mut c_void, values: *const f32, count: usize) -> bool;
@@ -54,11 +56,16 @@ enum Action {
     Stop,
     Wake,
     Change(usize, f32),
+    ToggleBitrateMenu,
+    Bitrate(u32),
 }
 struct Portal {
     media: Media,
     profile: PathBuf,
     quality_file: PathBuf,
+    bitrate_file: PathBuf,
+    bitrate: u32,
+    bitrate_menu_open: bool,
     fields: Vec<quality::Field>,
     values: Vec<f32>,
     page: Page,
@@ -90,6 +97,12 @@ impl Portal {
             .unwrap_or_default();
         let profile = root.join("console.dat");
         let quality_file = root.join("quality.json");
+        let bitrate_file = root.join("bitrate.txt");
+        let bitrate = std::fs::read_to_string(&bitrate_file)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+            .filter(|value| BITRATES.contains(value))
+            .unwrap_or(DEFAULT_BITRATE);
         let fields = quality::schema();
         let mut values: Vec<_> = fields.iter().map(|f| f.initial).collect();
         let media = Media(unsafe {
@@ -163,6 +176,9 @@ impl Portal {
             media,
             profile,
             quality_file,
+            bitrate_file,
+            bitrate,
+            bitrate_menu_open: false,
             fields,
             values,
             page: Page::Session,
@@ -192,6 +208,9 @@ impl Portal {
 
     fn act(&mut self, action: Action, w: &mut Window, cx: &mut Context<Self>) {
         self.notice.clear();
+        if !matches!(action, Action::ToggleBitrateMenu) {
+            self.bitrate_menu_open = false;
+        }
         let file: Vec<u16> = self
             .profile
             .as_os_str()
@@ -272,13 +291,25 @@ impl Portal {
                     self.page = Page::Pair;
                     self.focus.focus(w);
                     self.notice = "Pareie o console neste aplicativo.".into();
-                } else if unsafe { portal_open(self.media.0, file.as_ptr(), wake) } != 0 {
+                } else if unsafe {
+                    portal_open(self.media.0, file.as_ptr(), wake, self.bitrate * 1000)
+                } != 0
+                {
                     self.notice = "Falha ao acessar o PS5.".into()
                 } else if wake {
                     self.notice = "Comando enviado.".into()
                 }
             }
             Action::Stop => unsafe { portal_stop(self.media.0) },
+            Action::ToggleBitrateMenu => {
+                self.bitrate_menu_open = !self.bitrate_menu_open;
+            }
+            Action::Bitrate(requested) => {
+                match std::fs::write(&self.bitrate_file, requested.to_string()) {
+                    Ok(()) => self.bitrate = requested,
+                    Err(err) => self.notice = format!("Falha ao salvar o bitrate: {err}"),
+                }
+            }
             Action::Change(i, d) => {
                 let f = &self.fields[i];
                 let old = self.values[i];
@@ -306,6 +337,12 @@ impl Portal {
         cx.notify();
     }
     fn input(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.bitrate_menu_open && e.keystroke.key == "escape" {
+            self.bitrate_menu_open = false;
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if !matches!(self.page, Page::Pair | Page::Login) || self.busy {
             return;
         }
@@ -511,7 +548,7 @@ impl Render for Portal {
                 div()
                     .text_xl()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Portal PS5"),
+                    .child("VeloraNR"),
             );
         match if self.page.is_dialog() {
             Page::Session
@@ -535,6 +572,41 @@ impl Render for Portal {
                             _ => "Configure seu PS5 para começar",
                         }),
                 );
+                col = col.child(div().mt_2().text_sm().child("Bitrate solicitado (Mbps)"));
+                if matches!(self.status, 1..=3) {
+                    col = col.child(format!("{} Mbps", self.bitrate));
+                } else {
+                    let indicator = if self.bitrate_menu_open { "▴" } else { "▾" };
+                    col = col.child(Self::button(
+                        6,
+                        format!("{} Mbps  {indicator}", self.bitrate),
+                        Action::ToggleBitrateMenu,
+                        cx,
+                    ));
+                    if self.bitrate_menu_open {
+                        let mut menu = div()
+                            .id("bitrate-options")
+                            .flex_shrink_0()
+                            .p_1()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(rgb(BORDER))
+                            .bg(rgb(PANEL));
+                        for (index, bitrate) in BITRATES.into_iter().enumerate() {
+                            let marker = if bitrate == self.bitrate { "  ✓" } else { "" };
+                            menu = menu.child(Self::button(
+                                100 + index,
+                                format!("{bitrate} Mbps{marker}"),
+                                Action::Bitrate(bitrate),
+                                cx,
+                            ));
+                        }
+                        col = col.child(menu);
+                    }
+                }
                 if matches!(self.status, 1..=3) {
                     col = col.child(Self::button(1, "Desconectar", Action::Stop, cx));
                 } else if paired {
@@ -691,7 +763,7 @@ fn main() {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(b)),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Portal PS5".into()),
+                    title: Some("VeloraNR".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
