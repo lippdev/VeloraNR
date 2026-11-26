@@ -9,7 +9,27 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const BACKEND: u32 = 9;
+pub const FIRST_EXTERNAL: u32 = 9;
+
+fn generator(backend: u32) -> Option<(u32, &'static str)> {
+    match backend {
+        9 => Some((2, "SMFG")),
+        10 => Some((0, "NVIDIA DLSS MFG")),
+        11 => Some((1, "Intel XeSS MFG")),
+        _ => None,
+    }
+}
+
+pub fn runtime(backend: u32) -> Result<PathBuf, String> {
+    let exe = engine().ok_or("Motor Next Boost ausente no pacote do VeloraNR.")?;
+    let dir = exe.parent().unwrap();
+    match backend {
+        9 => Ok(exe),
+        10 if dir.join("nvngx_dlssg.dll").is_file() => Ok(exe),
+        11 if dir.join("xess/libxess_fg.dll").is_file() => Ok(exe),
+        _ => Err("Pacote do gerador Next Boost ausente.".into()),
+    }
+}
 
 pub fn engine() -> Option<PathBuf> {
     let path = std::env::current_exe()
@@ -25,6 +45,7 @@ pub struct Motion {
     config_file: Option<PathBuf>,
     lines: Option<Receiver<String>>,
     requested: u32,
+    backend: u32,
     stopping: Option<Instant>,
     pub status: String,
     pub applied_multiplier: u32,
@@ -34,20 +55,30 @@ impl Motion {
     pub fn pid(&self) -> Option<u32> {
         self.child.as_ref().map(Child::id)
     }
-    fn start(&mut self, root: &Path, hwnd: isize, multiplier: u32) -> Result<(), String> {
+    fn start(
+        &mut self,
+        root: &Path,
+        hwnd: isize,
+        multiplier: u32,
+        backend: u32,
+    ) -> Result<(), String> {
         self.applied_multiplier = 0;
-        let exe = engine().ok_or("Motor Super Motion ausente no pacote do VeloraNR.")?;
+        let exe = runtime(backend)?;
+        let (code, name) = generator(backend).ok_or("Gerador desconhecido")?;
+        let triangles = u32::from(code == 2);
         if hwnd == 0 {
             return Err("Janela de vídeo indisponível.".into());
         }
         let cfg = root.join(format!("super-motion-{}.cfg", std::process::id()));
         let options = concat!(
-            "generator=2\nmfg=1\nratio=0\nadaptive=0\nqueue=1\nstill=1\n",
-            "msm_tri=1\nmsm_ai=0\nmsm_search=1\ngpu=-1\nsync=1\ncounter=1\n",
+            "mfg=1\nratio=0\nadaptive=0\nqueue=1\nstill=1\n",
+            "msm_ai=0\nmsm_search=1\ngpu=-1\nsync=1\ncounter=1\n",
             "upscaler=0\ncapture_api=1\nwindow_mode=2\nsource=0\ndelay=0\n"
         );
         let owner = std::process::id();
-        let config = format!("hwnd={hwnd}\nowner={owner}\nmultiplier={multiplier}\n{options}");
+        let config = format!(
+            "hwnd={hwnd}\nowner={owner}\nmultiplier={multiplier}\ngenerator={code}\nmsm_tri={triangles}\n{options}"
+        );
         fs::write(&cfg, config).map_err(|e| e.to_string())?;
         self.config_file = Some(cfg.clone());
         let mut child = Command::new(&exe)
@@ -59,7 +90,7 @@ impl Motion {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| format!("Falha ao iniciar Super Motion: {e}"))?;
+            .map_err(|e| format!("Falha ao iniciar Next Boost: {e}"))?;
         let stdout = child.stdout.take().unwrap();
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -70,7 +101,7 @@ impl Motion {
             }
         });
         unsafe { super::portal_motion_pid(child.id()) };
-        super::session_event(&format!("super-motion pid={}", child.id()));
+        super::session_event(&format!("next-boost generator={name} pid={}", child.id()));
         self.child = Some(child);
         self.lines = Some(rx);
         Ok(())
@@ -84,8 +115,9 @@ impl Motion {
     }
 
     // Called on the session tick. Wait for the previous overlay to leave before reopening.
-    pub fn tick(&mut self, root: &Path, hwnd: isize, wanted: u32) -> bool {
-        if self.child.is_none() && self.requested == wanted {
+    pub fn tick(&mut self, root: &Path, hwnd: isize, wanted: u32, backend: u32) -> bool {
+        let changed = self.requested != wanted || (wanted > 0 && backend != self.backend);
+        if self.child.is_none() && !changed {
             return false;
         }
         let before = self.status.clone();
@@ -103,8 +135,8 @@ impl Motion {
                     Some("@fps") if !self.status.starts_with("Falha") => {
                         if let (Some(base), Some(out)) = (parts.next(), parts.next()) {
                             self.status = match (base.parse::<u32>(), out.parse::<u32>()) {
-                                (Ok(base), Ok(out)) => format!("Super Motion · {base} → {out} FPS"),
-                                _ => "Super Motion · aguardando quadros".into(),
+                                (Ok(base), Ok(out)) => format!("Next Boost · {base} → {out} FPS"),
+                                _ => "Next Boost · aguardando quadros".into(),
                             };
                         }
                     }
@@ -117,7 +149,7 @@ impl Motion {
                     {
                         self.applied_multiplier = 0;
                         self.status =
-                            format!("Falha no Super Motion · {}", line.trim_start_matches('@'))
+                            format!("Falha no Next Boost · {}", line.trim_start_matches('@'))
                     }
                     _ => {}
                 }
@@ -133,7 +165,7 @@ impl Motion {
             if let Ok(Some(_)) = child.try_wait() {
                 if self.stopping.take().is_none() && !self.status.starts_with("Falha") {
                     self.status =
-                        "Super Motion encerrou. Desative e ative para tentar novamente.".into();
+                        "Next Boost encerrou. Desative e ative para tentar novamente.".into();
                 }
                 self.applied_multiplier = 0;
                 unsafe { super::portal_motion_pid(0) };
@@ -141,16 +173,17 @@ impl Motion {
                 self.lines = None;
             }
         }
-        if wanted != self.requested {
+        if changed {
             self.stop();
             if self.child.is_none() || wanted == 0 {
                 self.requested = wanted;
+                self.backend = backend;
                 self.status = if wanted == 0 {
                     String::new()
                 } else {
-                    self.start(root, hwnd, wanted)
+                    self.start(root, hwnd, wanted, backend)
                         .err()
-                        .unwrap_or_else(|| "Iniciando Super Motion…".into())
+                        .unwrap_or_else(|| "Iniciando Next Boost…".into())
                 };
             } else if self.stopping.is_some() {
                 self.requested = 0;
@@ -183,12 +216,20 @@ impl Drop for Motion {
 mod tests {
     use super::*;
     #[test]
+    fn external_generators_use_next_boost_protocol_ids() {
+        assert_eq!(generator(8), None);
+        assert_eq!(generator(9).unwrap().0, 2);
+        assert_eq!(generator(10).unwrap().0, 0);
+        assert_eq!(generator(11).unwrap().0, 1);
+    }
+
+    #[test]
     fn missing_capture_target_never_starts_a_picker() {
         let mut motion = Motion::default();
-        assert!(motion.tick(Path::new("."), 0, 4));
+        assert!(motion.tick(Path::new("."), 0, 4, 9));
         assert!(motion.child.is_none());
-        assert!(!motion.tick(Path::new("."), 0, 4));
-        assert!(motion.tick(Path::new("."), 0, 0));
+        assert!(!motion.tick(Path::new("."), 0, 4, 9));
+        assert!(motion.tick(Path::new("."), 0, 0, 9));
         assert!(motion.status.is_empty());
     }
 }

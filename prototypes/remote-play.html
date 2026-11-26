@@ -607,11 +607,12 @@ updateAA();
 const fgGroup = addSection('#fg-panel','Interpolação de quadros',true);
 addSwitch(settingRow(fgGroup,'Ativar Frame Generation'),'fg','Frame Generation',false);
 const backends = [
-  ['smfg','Super Motion (Next Boost)',6], ['vfg','NVIDIA VFG',8], ['xess','Intel XeSS FG',4], ['dlss','NVIDIA DLSS FG',6],
+  ['smfg','Super Motion (SMFG)',6], ['nb-dlss','NVIDIA DLSS MFG',6], ['nb-xess','Intel XeSS MFG',6], ['vfg','NVIDIA VFG',8], ['xess','Intel XeSS FG',4], ['dlss','NVIDIA DLSS FG',6],
   ['xmx','XeFG XMX (experimental)',6], ['fsr3','AMD FSR 3.1',2], ['fsr4','AMD FSR 4 ML',2],
   ['amdfrc','AMD FRC',2], ['rife','RIFE',3]
 ];
-const backend = selectSetting(settingRow(fgGroup,'Método'),'fg.backend',backends,'vfg');
+const mode = selectSetting(settingRow(fgGroup,'Modo de aplicação'),'fg.mode',[['internal','Interno'],['capture','Captura Next Boost']],'internal');
+const backend = selectSetting(settingRow(fgGroup,'Gerador'),'fg.backend',backends,'vfg');
 const multiplier = selectSetting(settingRow(fgGroup,'Multiplicador'),'fg.multiplier',[],'');
 const motion = selectSetting(settingRow(fgGroup,'Fonte de movimento'),'fg.motion',
   [['auto','Automático'],['optical','Fluxo óptico'],['zero','Sem movimento']],'auto');
@@ -626,7 +627,7 @@ function updateFG() {
   multiplier.replaceChildren(...Array.from({length:ceiling-1},(_,index)=>new Option((index+2)+'×',index+2)));
   multiplier.value = Math.min(current,ceiling);
   vfgQuality.parentElement.hidden = backend.value !== 'vfg';
-  motion.parentElement.hidden = ['smfg','vfg','amdfrc','rife'].includes(backend.value);
+  motion.parentElement.hidden = ['nb-dlss','nb-xess','smfg','vfg','amdfrc','rife'].includes(backend.value);
   fgNote.textContent = {
     smfg:'Captura o vídeo após o DLSS 5. Ligue ou desligue pela lateral durante a transmissão.',
     xess:'2× nativo. 3× e 4× dependem do runtime experimental.',
@@ -634,7 +635,15 @@ function updateFG() {
     dlss:'As opções disponíveis no app dependem da GPU e do runtime DLSS.'
   }[backend.value] || 'A disponibilidade depende da GPU e do runtime.';
 }
+function updateMode() {
+  const choices = mode.value === 'capture' ? backends.slice(0,3) : backends.slice(3);
+  const previous = backend.value;
+  backend.replaceChildren(...choices.map(([id,label]) => new Option(label,id)));
+  if (choices.some(([id]) => id === previous)) backend.value = previous;
+  updateFG();
+}
 backend.onchange = updateFG;
-updateFG();
+mode.onchange = updateMode;
+updateMode();
 
 </script></html>

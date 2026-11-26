@@ -42,12 +42,16 @@ foreach ($name in 'runtime/nvidia-vfg','runtime/experimental/dlssg-kernels','run
         Get-ChildItem -LiteralPath $source | Copy-Item -Destination $target -Recurse -Force
     }
 }
-# Stage only the SMFG core. NVIDIA and Intel sidecar packs are separate products.
+# Stage the core and any installed generator packs from the supplied engine.
 if ($SuperMotionEngine) {
     $source = (Resolve-Path -LiteralPath $SuperMotionEngine).Path
     $target = Join-Path $Destination 'framegen/engine'
     New-Item -ItemType Directory -Force $target | Out-Null
     Copy-Item -LiteralPath (Join-Path $source 'nvngx.dll') -Destination $target -Force
+    foreach ($name in 'nvngx_dlssg.dll','dlssg_compat','xess') {
+        $pack = Join-Path $source $name
+        if (Test-Path -LiteralPath $pack) { Copy-Item -LiteralPath $pack -Destination $target -Recurse -Force }
+    }
     foreach ($pattern in 'msvcp*.dll','concrt*.dll','vcruntime*.dll') {
         Get-ChildItem -LiteralPath $source -Filter $pattern -File | Copy-Item -Destination $target -Force
     }

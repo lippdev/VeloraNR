@@ -79,16 +79,18 @@ mod tests {
     }
 
     #[test]
-    fn super_motion_limits_saved_internal_multiplier() {
+    fn external_generators_limit_saved_internal_multiplier() {
         let fields = super::schema();
         let mut values: Vec<_> = fields.iter().map(|field| field.initial).collect();
         let index = |path| fields.iter().position(|field| field.path == path).unwrap();
         let backend = index("frameGenerationBackend");
-        assert!(fields[backend].max >= crate::super_motion::BACKEND as f32);
-        values[backend] = crate::super_motion::BACKEND as f32;
-        values[index("multiplier")] = 8.;
-        super::normalize(&fields, &mut values);
-        assert_eq!(values[index("multiplier")], 6.);
+        assert!(fields[backend].max >= 11.);
+        for id in 9..=11 {
+            values[backend] = id as f32;
+            values[index("multiplier")] = 8.;
+            super::normalize(&fields, &mut values);
+            assert_eq!(values[index("multiplier")], 6.);
+        }
     }
 
     #[test]
