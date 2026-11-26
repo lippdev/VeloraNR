@@ -22,6 +22,12 @@ Para incluir o núcleo SMFG no pacote local, passe também `-SuperMotionEngine '
 
 Para testar sem console, execute `veloranr.exe --test-video "C:/videos/teste.mp4"`. O vídeo passa pelo mesmo renderer e pelos mesmos controles de qualidade, com preferências e log separados em `%LOCALAPPDATA%/VeloraNR-test-video`.
 
+## Fluidez e diagnóstico
+
+Em **Ajustes rápidos**, **Medir cadência · 15 s** registra os intervalos entre apresentações submetidas ao kernel gráfico pelo renderer e pelo Super Motion. A captura usa ETW do Windows. O relatório preserva os eventos dos processos do VeloraNR e do motor. Uma medição com perdas é identificada como parcial. Se o Windows recusar a permissão de rastreamento, o painel informa e o streaming continua.
+
+**Abrir relatório** abre a pasta da medição. `apresentacoes.csv` preserva o horário UTC em microssegundos Unix e o intervalo de cada chamada. `resumo.csv` agrupa mediana, P95 e máximo por processo e janela de destino. O campo `videoHwnd` identifica a superfície de vídeo entre as janelas do renderer. `sessao.log` usa UTC e registra a superfície de vídeo, ajustes, confirmações, FPS do motor e tempos de processamento. Durante Remote Play, `ratesReady=true` identifica amostras válidas de recepção e decodificação. A medição descreve submissões ao Windows; medir a latência do controle e a exibição física requer instrumentação separada.
+
 ## Git Flow
 
 - `main` contém versões publicadas. `develop` recebe a integração.
