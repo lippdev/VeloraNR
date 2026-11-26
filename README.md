@@ -18,7 +18,7 @@ O Remote Play foi verificado com um PS5 já vinculado. A sessão confirmou DLSS 
 
 ## Super Motion (Next Boost)
 
-Para incluir o núcleo SMFG no pacote local, passe também `-SuperMotionEngine 'C:/caminho/framegen/engine'` ao script. O VeloraNR usa sua própria cópia do núcleo. Na aba **Frame Generation**, selecione **Super Motion (Next Boost)** e o multiplicador de 2× a 6×. Durante a reprodução, o botão na lateral liga ou desliga a sobreposição. Ao sair da tela de streaming, a captura para. O contador informa as taxas observadas pelo motor. O DLSS NR continua sendo configurado na aba **DLSS 5**.
+Para incluir o núcleo SMFG no pacote local, passe também `-SuperMotionEngine 'C:/caminho/framegen/engine'` ao script. O VeloraNR usa sua própria cópia do núcleo. Na aba **Frame Generation**, selecione **Super Motion (Next Boost)** e o multiplicador de 2× a 6×. Durante o jogo, F11 alterna a tela cheia sem bordas. Encoste o mouse na extremidade esquerda do player para abrir **Ajustes rápidos** e volte ao vídeo para recolher o painel. Em **Frame Gen**, escolha **Desligado** ou um multiplicador. O mesmo painel permite ajustar DLSS 5, antisserrilhamento e super-resolução enquanto a sessão continua. Ao sair da tela de streaming, a captura para. O contador informa as taxas observadas pelo motor. O DLSS NR continua sendo configurado na aba **DLSS 5**.
 
 Para testar sem console, execute `veloranr.exe --test-video "C:/videos/teste.mp4"`. O vídeo passa pelo mesmo renderer e pelos mesmos controles de qualidade, com preferências e log separados em `%LOCALAPPDATA%/VeloraNR-test-video`.
 

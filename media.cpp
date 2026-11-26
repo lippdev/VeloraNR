@@ -93,6 +93,15 @@ API bool portal_preview(Player* p,const wchar_t* file) noexcept {
     catch(...){return false;}
 }
 API void portal_stop(Player* p){p->engine.stop();p->pad.stop();p->padStarted=false;}
+// Logical client coordinates work for both the DXGI child and the owned capture window.
+API int portal_pointer_x(Player* p){
+    HWND front=GetForegroundWindow();
+    POINT pt{};RECT r{};
+    if((front!=p->parent && front!=p->video) || IsIconic(p->parent) ||
+       !GetCursorPos(&pt) || !ScreenToClient(p->parent,&pt) || !GetClientRect(p->parent,&r) ||
+       !PtInRect(&r,pt))return -1;
+    return MulDiv(pt.x,96,GetDpiForWindow(p->parent));
+}
 API int portal_tick(Player* p,int sidebar,bool show){
     // Windows Graphics Capture requires a top-level HWND. Keep the DXGI surface and its
     // owner, but present the video as a borderless owned window while SMFG is selected.

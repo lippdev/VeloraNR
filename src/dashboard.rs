@@ -81,6 +81,50 @@ impl Portal {
         self.values[index]
     }
 
+    pub(super) fn quick_panel(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
+        div()
+            .id("quick-settings")
+            .w(px(QUICK_WIDTH as f32))
+            .h_full()
+            .flex_shrink_0()
+            .overflow_y_scroll()
+            .bg(rgb(BACKGROUND))
+            .px_3()
+            .py_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(Self::effect_settings(self, "Ajustes rápidos", cx))
+                    .child(self.effect_health(true))
+                    .when(!self.notice.is_empty(), |d| d.child(self.notice.clone()))
+                    .child(Self::button(
+                        9101,
+                        if window.is_fullscreen() {
+                            "Sair da tela cheia · F11"
+                        } else {
+                            "Tela cheia · F11"
+                        },
+                        Action::Fullscreen,
+                        cx,
+                    ))
+                    .child(Self::button(
+                        9102,
+                        "Voltar ao jogo · Esc",
+                        Action::CloseQuick,
+                        cx,
+                    ))
+                    .child(Self::button(
+                        9103,
+                        "Visão geral",
+                        Action::Page(Page::Session),
+                        cx,
+                    ))
+                    .child(Self::button(9104, "Desconectar", Action::Stop, cx)),
+            )
+    }
+
     pub(super) fn effect_settings(&self, group: &'static str, cx: &Context<Self>) -> Div {
         let mut body = div().flex().flex_col();
         if group == "Frame Generation" {
@@ -102,12 +146,18 @@ impl Portal {
         }
         let backend = self.setting_value("frameGenerationBackend") as u32;
         let aa_method = self.setting_value("antiAlias.method") as u32;
-        for (i, field) in self
-            .fields
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| f.group == group)
-        {
+        for (i, field) in self.fields.iter().enumerate().filter(|(_, f)| {
+            if group == "Ajustes rápidos" {
+                match f.path {
+                    "nr" | "sr" | "multiplier" | "antiAlias.enabled" => true,
+                    "srTarget" => self.setting_value("sr") != 0.,
+                    "antiAlias.method" => self.setting_value("antiAlias.enabled") != 0.,
+                    _ => false,
+                }
+            } else {
+                f.group == group
+            }
+        }) {
             let value = self.values[i];
             let applicable = match field.path {
                 _ if group == "Frame Generation" && backend == super_motion::BACKEND => {
@@ -222,6 +272,18 @@ impl Portal {
                 ),
                 "antiAlias.temporal" => ("Acumulação temporal", &["Desligada", "T2x", "4x"]),
                 _ => (field.label, &[]),
+            };
+            let label = if group == "Ajustes rápidos" {
+                match field.path {
+                    "nr" => "DLSS 5",
+                    "sr" => "Super-resolução",
+                    "multiplier" => "Frame Gen",
+                    "antiAlias.enabled" => "Antisserrilhamento",
+                    "antiAlias.method" => "Filtro",
+                    _ => label,
+                }
+            } else {
+                label
             };
             let toggle =
                 options.is_empty() && field.min == 0. && field.max == 1. && field.step == 1.;
