@@ -1,4 +1,5 @@
 #![windows_subsystem = "windows"]
+mod cadence;
 mod discovery;
 mod pairing;
 mod quality;
@@ -30,9 +31,19 @@ unsafe extern "C" {
     fn portal_preview(media: *mut c_void, file: *const u16) -> bool;
     fn portal_capture_window(media: *mut c_void) -> isize;
     fn portal_stop(media: *mut c_void);
+    fn portal_motion_pid(pid: u32);
+    fn portal_cancel_measure();
+    fn portal_attach_panel(media: *mut c_void, panel: isize);
+    fn portal_panel(media: *mut c_void, open: bool, width: i32, height: i32);
+    fn portal_event(event: *const std::ffi::c_char);
     fn portal_pointer_x(media: *mut c_void) -> i32;
     fn portal_tick(media: *mut c_void, width: i32, show: bool) -> i32;
     fn portal_quality(media: *mut c_void, values: *const f32, count: usize) -> bool;
+}
+fn session_event(message: &str) {
+    if let Ok(text) = std::ffi::CString::new(message) {
+        unsafe { portal_event(text.as_ptr()) };
+    }
 }
 struct Media(*mut c_void);
 impl Drop for Media {
@@ -57,6 +68,8 @@ enum Page {
 }
 #[derive(Clone, Copy)]
 enum Action {
+    CaptureCadence,
+    OpenReport,
     CloseQuick,
     Fullscreen,
     Login,
@@ -85,6 +98,13 @@ struct Portal {
     quality_file: PathBuf,
     bitrate_file: PathBuf,
     bitrate: u32,
+    main_window: WindowHandle<Portal>,
+    fullscreen: bool,
+    feedback: Option<(usize, std::time::Instant)>,
+    feedback_text: String,
+    capturing: bool,
+    report: Option<PathBuf>,
+    capture_message: String,
     quick_open: bool,
     previous_x: i32,
     previous_multiplier: f32,
@@ -206,6 +226,11 @@ impl Portal {
                                     };
                                     p.previous_x = x;
                                     if open != p.quick_open {
+                                        session_event(if open {
+                                            "panel=open"
+                                        } else {
+                                            "panel=closed"
+                                        });
                                         p.quick_open = open;
                                         p.setting_menu = None;
                                         cx.notify();
@@ -215,11 +240,21 @@ impl Portal {
                                 p.quick_open = false;
                                 p.previous_x = -1;
                             }
-                            let sidebar = if playing {
-                                if p.quick_open { QUICK_WIDTH } else { 0 }
-                            } else {
-                                SIDEBAR
+                            unsafe {
+                                portal_panel(
+                                    p.media.0,
+                                    playing && (p.quick_open || !p.feedback_text.is_empty()),
+                                    QUICK_WIDTH,
+                                    if !p.quick_open && !p.feedback_text.is_empty() {
+                                        48
+                                    } else if p.setting_menu.is_some() {
+                                        680
+                                    } else {
+                                        560
+                                    },
+                                )
                             };
+                            let sidebar = if playing { 0 } else { SIDEBAR };
                             let state = unsafe {
                                 portal_tick(
                                     p.media.0,
@@ -254,6 +289,22 @@ impl Portal {
                                 p.effect_status = effects;
                                 cx.notify();
                             }
+                            if let Some((i, started)) = p.feedback {
+                                let message = p.applied_feedback(i, started.elapsed());
+                                if p.feedback_text != message {
+                                    session_event(&format!(
+                                        "effect={} status={message}",
+                                        p.fields[i].path
+                                    ));
+                                    p.feedback_text = message;
+                                    cx.notify();
+                                }
+                                if !playing || started.elapsed() >= Duration::from_secs(8) {
+                                    cx.notify();
+                                    p.feedback = None;
+                                    p.feedback_text.clear();
+                                }
+                            }
                             if state != p.status {
                                 p.status = state;
                                 if state == 7 {
@@ -285,6 +336,13 @@ impl Portal {
             quality_file,
             bitrate_file,
             bitrate,
+            main_window: window.window_handle().downcast().unwrap(),
+            fullscreen: false,
+            feedback: None,
+            feedback_text: String::new(),
+            capturing: false,
+            report: None,
+            capture_message: String::new(),
             quick_open: false,
             previous_x: -1,
             previous_multiplier: 2.,
@@ -325,6 +383,13 @@ impl Portal {
     }
 
     fn act(&mut self, action: Action, w: &mut Window, cx: &mut Context<Self>) {
+        if Window::window_handle(w) != self.main_window.into() {
+            let main = self.main_window;
+            cx.defer(move |cx| {
+                let _ = main.update(cx, |p, w, cx| p.act(action, w, cx));
+            });
+            return;
+        }
         self.notice.clear();
         if !matches!(action, Action::ToggleBitrateMenu) {
             self.bitrate_menu_open = false;
@@ -360,6 +425,50 @@ impl Portal {
         };
         match action {
             Action::ToggleFg | Action::ChooseSetting(..) => unreachable!(),
+            Action::CaptureCadence => {
+                if self.capturing {
+                    return;
+                }
+                let root = self.quality_file.parent().unwrap().to_owned();
+                let sidecar = self.motion.pid();
+                self.capturing = true;
+                self.capture_message.clear();
+                session_event(&format!(
+                    "capture=start rendererPid={} sidecarPid={sidecar:?}",
+                    std::process::id()
+                ));
+                let work = cx
+                    .background_executor()
+                    .spawn(async move { cadence::capture(&root, sidecar) });
+                cx.spawn(async move |this, cx| {
+                    let result = work.await;
+                    let _ = this.update(cx, |p, cx| {
+                        p.capturing = false;
+                        match result {
+                            Ok((path, lost)) => {
+                                session_event(&format!("capture=saved path={}", path.display()));
+                                p.report = Some(path);
+                                p.capture_message = if lost == 0 {
+                                    "Medição concluída".into()
+                                } else {
+                                    format!("Captura parcial · {lost} eventos perdidos")
+                                };
+                            }
+                            Err(e) => {
+                                session_event(&format!("capture=failed error={e}"));
+                                p.capture_message = e;
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            Action::OpenReport => {
+                if let Some(dir) = &self.report {
+                    cx.open_with_system(dir);
+                }
+            }
             Action::CloseQuick => {
                 self.quick_open = false;
                 self.focus.focus(w);
@@ -494,6 +603,12 @@ impl Portal {
                 self.values[i] =
                     ((old[i] + d * f.step).clamp(f.min, f.max) * 10000.).round() / 10000.;
                 quality::normalize(&self.fields, &mut self.values);
+                session_event(&format!(
+                    "request={} previous={} requested={}",
+                    f.path, old[i], self.values[i]
+                ));
+                self.feedback = None;
+                self.feedback_text.clear();
                 if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND
                     && super_motion::engine().is_none()
                     && (f.path == "frameGenerationBackend"
@@ -507,9 +622,17 @@ impl Portal {
                 }
                 if !unsafe { portal_quality(self.media.0, self.values.as_ptr(), self.values.len()) }
                 {
+                    session_event(&format!(
+                        "effect={} result=rejected retained={}",
+                        f.path, old[i]
+                    ));
                     self.values = old;
                     self.notice = "Combinação de parâmetros inválida.".into();
                 } else {
+                    if matches!(self.status, 2..=3) {
+                        self.feedback = Some((i, std::time::Instant::now()));
+                        self.feedback_text = "Aplicando…".into();
+                    }
                     let saved: std::collections::BTreeMap<_, _> = self
                         .fields
                         .iter()
@@ -757,6 +880,30 @@ impl Portal {
 mod dashboard;
 impl Render for Portal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if Window::window_handle(window) != self.main_window.into() {
+            return div()
+                .size_full()
+                .font_family("Instrument Sans")
+                .bg(rgb(BACKGROUND))
+                .text_color(rgb(TEXT))
+                .when(self.quick_open || self.feedback_text.is_empty(), |d| {
+                    d.child(self.quick_panel(cx))
+                })
+                .when(!self.quick_open && !self.feedback_text.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .px_4()
+                            .bg(rgb(PANEL))
+                            .text_sm()
+                            .child(self.feedback_text.clone()),
+                    )
+                })
+                .into_any_element();
+        }
+        self.fullscreen = window.is_fullscreen();
         if (self.page.is_dialog() || self.page == Page::Stream)
             && !self.focus.contains_focused(window, cx)
         {
@@ -900,15 +1047,12 @@ impl Render for Portal {
                         page != Page::Stream || !matches!(self.status, 2..=3),
                         |row| row.child(self.navigation(page, cx)),
                     )
-                    .when(
-                        page == Page::Stream && matches!(self.status, 2..=3) && self.quick_open,
-                        |row| row.child(self.quick_panel(window, cx)),
-                    )
                     .child(col.when(!self.notice.is_empty(), |col| {
                         col.child(self.notice.clone())
                     })),
             )
             .when(dialog, |root| root.child(self.dialog(cx)))
+            .into_any_element()
     }
 }
 fn main() {
@@ -921,25 +1065,59 @@ fn main() {
                 "../assets/InstrumentSans.ttf"
             ))])
             .expect("carregar Instrument Sans");
-        cx.on_window_closed(|cx| {
-            if cx.windows().is_empty() {
-                cx.quit()
+
+        let b = Bounds::centered(None, size(px(1150.), px(680.)), cx);
+        let main = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(b)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("VeloraNR".into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                |w, cx| cx.new(|cx| Portal::new(w, cx)),
+            )
+            .expect("janela GPUI");
+        let view = main.update(cx, |_, _, cx| cx.entity()).unwrap();
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                    None,
+                    size(px(QUICK_WIDTH as f32), px(540.)),
+                    cx,
+                ))),
+                titlebar: None,
+                focus: false,
+                show: false,
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                ..Default::default()
+            },
+            move |w, cx| {
+                let RawWindowHandle::Win32(handle) =
+                    HasWindowHandle::window_handle(w).unwrap().as_raw()
+                else {
+                    unreachable!()
+                };
+                let media = view.read(cx).media.0;
+                if !media.is_null() {
+                    unsafe { portal_attach_panel(media, handle.hwnd.get()) };
+                }
+                view
+            },
+        )
+        .expect("janela de ajustes");
+        cx.on_window_closed(move |cx| {
+            if !cx.windows().contains(&main.into()) {
+                unsafe { portal_cancel_measure() };
+                cx.quit();
             }
         })
         .detach();
-        let b = Bounds::centered(None, size(px(1150.), px(680.)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(b)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("VeloraNR".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |w, cx| cx.new(|cx| Portal::new(w, cx)),
-        )
-        .expect("janela GPUI");
+        let _ = main.update(cx, |_, w, _| w.activate_window());
         cx.activate(true);
     });
 }

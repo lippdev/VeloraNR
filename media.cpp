@@ -10,15 +10,20 @@
 #include <atomic>
 using namespace veyra;
 #define API extern "C" __declspec(dllexport)
+#include "cadence.h"
 struct Player {
-    HWND parent, video;
+    HWND parent, video, panel=nullptr;
+    double reveal=0;
+    int clipWidth=0;
+    ULONGLONG lastPanelTick=0, lastSample=0;
+    bool panelWanted=false, animations=true, panelToast=false;
     engine::EngineController engine;
     engine::EnhancementSettings quality;
     remoteplay::ControllerInput pad;
     bool padStarted=false, externalFg=false, detached=false;
     explicit Player(HWND window):parent(window),video(CreateWindowExW(0,L"STATIC",nullptr,
         WS_CHILD|WS_CLIPSIBLINGS,0,0,1,1,window,nullptr,GetModuleHandleW(nullptr),nullptr)) {}
-    ~Player(){engine.stop();pad.stop();if(video)DestroyWindow(video);}
+    ~Player(){portal_cancel_measure();engine.stop();pad.stop();if(video)DestroyWindow(video);}
 };
 API Player* portal_new(HWND window,const wchar_t* logPath) noexcept {
     auto& logger=Logger::instance();
@@ -85,6 +90,67 @@ API int portal_open(Player* p,const wchar_t* profile,bool wake,uint32_t bitrateK
         p->engine.openRemotePlay(p->video,std::move(desc),engine::PlayerOptions::from(p->quality));return 0;
     }catch(...){return -3;}
 }
+API void portal_event(const char* event){if(event)log::info("session-ui",event);}
+API void portal_attach_panel(Player* p,HWND panel){
+    p->panel=panel;
+    SetWindowLongPtrW(panel,GWL_STYLE,WS_POPUP|WS_CLIPCHILDREN);
+    SetWindowLongPtrW(panel,GWL_EXSTYLE,(GetWindowLongPtrW(panel,GWL_EXSTYLE)|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE)&~WS_EX_APPWINDOW);
+    SetWindowLongPtrW(panel,GWLP_HWNDPARENT,reinterpret_cast<LONG_PTR>(p->parent));
+    SetWindowTextW(panel,L"VeloraNR - Ajustes rápidos");
+    SetWindowPos(panel,nullptr,0,0,0,0,SWP_FRAMECHANGED|SWP_NOSIZE|SWP_NOMOVE|SWP_NOACTIVATE|SWP_NOZORDER|SWP_HIDEWINDOW);
+}
+API void portal_panel(Player* p,bool wanted,int width,int height){
+    if(!p->panel)return;
+    const bool toast=height==48;
+    if(toast!=p->panelToast){
+        auto style=GetWindowLongPtrW(p->panel,GWL_EXSTYLE);
+        SetWindowLongPtrW(p->panel,GWL_EXSTYLE,toast?style|WS_EX_TRANSPARENT:style&~WS_EX_TRANSPARENT);
+        p->panelToast=toast;
+    }
+    const auto front=GetForegroundWindow();
+    const bool focused=front==p->parent||front==p->video||front==p->panel;
+    wanted=wanted&&focused&&!IsIconic(p->parent);
+    const auto now=GetTickCount64();
+    if(wanted!=p->panelWanted){
+        BOOL enabled=TRUE;
+        SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&enabled,0);
+        p->animations=enabled!=FALSE;
+        p->panelWanted=wanted;
+        log::info("session-ui",wanted?"overlay=visible":"overlay=hidden");
+    }
+    double dt=std::min(0.05,(now-p->lastPanelTick)/1000.0);
+    p->lastPanelTick=now;
+    const double goal=wanted?1.:0.;
+    p->reveal=(p->animations&&focused)?goal+(p->reveal-goal)*std::exp(-26*dt):goal;
+    if(std::abs(p->reveal-goal)<0.012)p->reveal=goal;
+    if(p->reveal==0){if(IsWindowVisible(p->panel))ShowWindow(p->panel,SW_HIDE);return;}
+    RECT client{},old{};POINT origin{};
+    GetClientRect(p->parent,&client);ClientToScreen(p->parent,&origin);
+    const int dpi=GetDpiForWindow(p->parent);
+    auto scale=[dpi](int v){return MulDiv(v,dpi,96);};
+    int gap=scale(10);
+    int w=std::clamp<int>(scale(width),1,std::max<int>(1,client.right-2*gap));
+    int h=std::clamp<int>(scale(height),1,std::max<int>(1,client.bottom-2*gap));
+    int x=origin.x+int(gap*p->reveal), y=origin.y+gap+int((1-p->reveal)*scale(10));
+    GetWindowRect(p->panel,&old);
+    bool resized=old.right-old.left!=w||old.bottom-old.top!=h;
+    int visibleWidth=std::max(1,int(std::round(w*(0.92+0.08*p->reveal))));
+    if(resized||visibleWidth!=p->clipWidth){
+        POINT clientOrigin{};RECT inner{};
+        ClientToScreen(p->panel,&clientOrigin);GetClientRect(p->panel,&inner);
+        int left=std::max(0L,clientOrigin.x-old.left), top=std::max(0L,clientOrigin.y-old.top);
+        int right=std::max(0L,old.right-old.left-inner.right-left);
+        int bottom=std::max(0L,old.bottom-old.top-inner.bottom-top);
+        auto region=CreateRoundRectRgn(left,top,visibleWidth-right+1,h-bottom+1,scale(24),scale(24));
+        if(region&&!SetWindowRgn(p->panel,region,TRUE))DeleteObject(region);
+        p->clipWidth=visibleWidth;
+    }
+    bool raise=!IsWindowVisible(p->panel);
+    // A rebuilt FG output may have appeared above the panel.
+    if(!raise&&!toast){POINT point{x+w/2,y+scale(12)};HWND hit=WindowFromPoint(point);raise=hit&&GetAncestor(hit,GA_ROOT)!=p->panel;}
+    if(raise||resized||old.left!=x||old.top!=y)
+        SetWindowPos(p->panel,HWND_TOPMOST,x,y,w,h,SWP_NOACTIVATE|SWP_SHOWWINDOW|(raise?0:SWP_NOZORDER));
+}
 API HWND portal_capture_window(Player* p){
     return p->detached && IsWindowVisible(p->video) && !IsIconic(p->parent) ? p->video : nullptr;
 }
@@ -97,7 +163,7 @@ API void portal_stop(Player* p){p->engine.stop();p->pad.stop();p->padStarted=fal
 API int portal_pointer_x(Player* p){
     HWND front=GetForegroundWindow();
     POINT pt{};RECT r{};
-    if((front!=p->parent && front!=p->video) || IsIconic(p->parent) ||
+    if((front!=p->parent && front!=p->video && front!=p->panel) || IsIconic(p->parent) ||
        !GetCursorPos(&pt) || !ScreenToClient(p->parent,&pt) || !GetClientRect(p->parent,&r) ||
        !PtInRect(&r,pt))return -1;
     return MulDiv(pt.x,96,GetDpiForWindow(p->parent));
@@ -131,12 +197,19 @@ API int portal_tick(Player* p,int sidebar,bool show){
     }
     show=show&&!IsIconic(p->parent);
     if(bool(IsWindowVisible(p->video))!=show)ShowWindow(p->video,show?SW_SHOWNA:SW_HIDE);
-    if(p->padStarted){auto front=GetForegroundWindow();bool focused=front==p->parent||front==p->video;p->engine.remotePlayController(p->pad.poll(focused));p->pad.feedback(p->engine.remotePlayFeedback(),focused);}
+    if(p->padStarted){auto front=GetForegroundWindow();bool focused=front==p->parent||front==p->video||front==p->panel;p->engine.remotePlayController(p->pad.poll(focused));p->pad.feedback(p->engine.remotePlayFeedback(),focused);}
     auto state=p->engine.snapshot();
     if(state.remoteStream.state==remoteplay::SessionState::LoginPinRequired)return 7;
+    if(show && GetTickCount64()-p->lastSample>=1000){
+        p->lastSample=GetTickCount64();
+        log::info("session-sample",std::format("source={} sourceNominalFps={:.2f} receivedFps={:.2f} decodedFps={:.2f} ratesReady={} frames={} generated={} processCpuP95Ms={:.2f} presentCpuP95Ms={:.2f} lateP95Ms={:.2f} video={}x{} videoHwnd={:#x}",
+          state.remotePlay?"ps5":"file",state.nominalSourceFps,state.remoteStream.receivedFps,state.remoteStream.decodedFps,state.remoteStream.ratesReady,state.frames,state.generated,state.processCpuP95Ms,state.presentCpuP95Ms,state.lateP95Ms,w,h,reinterpret_cast<uintptr_t>(p->video)));
+    }
     const int effects = (int(state.applied.multiplier) << 8)
         | (int(state.nrActive) << 12) | (int(state.applying || state.nrPreparing) << 13)
-        | (int(!state.backendWarning.empty()) << 14);
+        | (int(!state.backendWarning.empty()) << 14) | (int(state.srActive)<<15)
+        | (int(state.applied.antiAlias.enabled)<<16) | (int(state.applied.antiAlias.method)<<17)
+        | (int(state.applied.srTarget)<<19) | (int(state.fgActive)<<22);
     return int(state.transport) | effects;
 }
 API bool portal_quality(Player* p,const float* values,size_t count) noexcept {

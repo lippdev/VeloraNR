@@ -81,27 +81,106 @@ impl Portal {
         self.values[index]
     }
 
-    pub(super) fn quick_panel(&self, window: &Window, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn applied_feedback(&self, i: usize, elapsed: std::time::Duration) -> String {
+        let status = self.effect_status;
+        let field = self.fields[i].path;
+        let wanted = self.values[i] as u32;
+        let (name, actual) = match field {
+            "nr" => ("DLSS 5", (status >> 4 & 1) as u32),
+            "sr" => ("Super-resolução", (status >> 7 & 1) as u32),
+            "srTarget" if status & 128 != 0 => {
+                ("Alvo de super-resolução", (status >> 11 & 7) as u32)
+            }
+            "srTarget" => ("Alvo de super-resolução", u32::MAX),
+            "antiAlias.enabled" => ("Antisserrilhamento", (status >> 8 & 1) as u32),
+            "antiAlias.method" => ("Filtro", (status >> 9 & 3) as u32),
+            "multiplier"
+                if self.setting_value("frameGenerationBackend") as u32 == super_motion::BACKEND =>
+            {
+                if self.motion.status.starts_with("Falha")
+                    || self.motion.status.contains("encerrou")
+                {
+                    return self.motion.status.clone();
+                }
+                ("Frame Gen", self.motion.applied_multiplier.max(1))
+            }
+            "multiplier" => (
+                "Frame Gen",
+                if status & (1 << 14) != 0 {
+                    (status & 15) as u32
+                } else {
+                    1
+                },
+            ),
+            _ => return String::new(),
+        };
+        if status & 32 == 0 && actual == wanted {
+            let value = match field {
+                "multiplier" if wanted > 1 => format!("{wanted}× ativo"),
+                "multiplier" => "desligado".into(),
+                "antiAlias.method" => ["FXAA", "SMAA", "MLAA", "DLAA"][wanted as usize].into(),
+                "srTarget" => ["1440p", "4K", "8K", "5K", "6K", "7K"][wanted as usize].into(),
+                _ if wanted == 0 => "desligado".into(),
+                _ => "ativo".into(),
+            };
+            format!("{name} · {value}")
+        } else if elapsed.as_secs() >= 5 {
+            if field == "multiplier" {
+                format!("Frame Gen · motor informa {}×", actual.max(1))
+            } else if status & 64 != 0 {
+                format!("{name} · motor sinalizou uma falha")
+            } else {
+                format!("{name} · sem confirmação do motor")
+            }
+        } else {
+            format!("{name} · aplicando…")
+        }
+    }
+
+    pub(super) fn quick_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         div()
             .id("quick-settings")
-            .w(px(QUICK_WIDTH as f32))
+            .w(px(QUICK_WIDTH as f32 - 14.))
             .h_full()
             .flex_shrink_0()
             .overflow_y_scroll()
-            .bg(rgb(BACKGROUND))
-            .px_3()
-            .py_3()
+            .bg(rgb(PANEL))
+            .rounded_xl()
+            .border_1()
+            .border_color(rgb(BORDER))
+            .px_4()
+            .py_4()
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(Self::effect_settings(self, "Ajustes rápidos", cx))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(Self::heading("Ajustes rápidos"))
+                            .child(
+                                Self::button(9102, "Fechar", Action::CloseQuick, cx)
+                                    .text_xs()
+                                    .py_1(),
+                            ),
+                    )
+                    .child(self.effect_settings("Ajustes rápidos", cx))
+                    .when(!self.feedback_text.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(TEXT))
+                                .child(self.feedback_text.clone()),
+                        )
+                    })
                     .child(self.effect_health(true))
                     .when(!self.notice.is_empty(), |d| d.child(self.notice.clone()))
                     .child(Self::button(
                         9101,
-                        if window.is_fullscreen() {
+                        if self.fullscreen {
                             "Sair da tela cheia · F11"
                         } else {
                             "Tela cheia · F11"
@@ -110,18 +189,44 @@ impl Portal {
                         cx,
                     ))
                     .child(Self::button(
-                        9102,
-                        "Voltar ao jogo · Esc",
-                        Action::CloseQuick,
+                        9110,
+                        if self.capturing {
+                            "Medindo cadência…"
+                        } else {
+                            "Medir cadência · 15 s"
+                        },
+                        Action::CaptureCadence,
                         cx,
                     ))
-                    .child(Self::button(
-                        9103,
-                        "Visão geral",
-                        Action::Page(Page::Session),
-                        cx,
-                    ))
-                    .child(Self::button(9104, "Desconectar", Action::Stop, cx)),
+                    .when(!self.capture_message.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(MUTED))
+                                .child(self.capture_message.clone()),
+                        )
+                    })
+                    .when(self.report.is_some(), |d| {
+                        d.child(Self::button(
+                            9111,
+                            "Abrir relatório",
+                            Action::OpenReport,
+                            cx,
+                        ))
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(Self::button(
+                                9103,
+                                "Visão geral",
+                                Action::Page(Page::Session),
+                                cx,
+                            ))
+                            .child(Self::button(9104, "Desconectar", Action::Stop, cx)),
+                    ),
             )
     }
 
@@ -352,6 +457,9 @@ impl Portal {
                 );
             }
             body = body.child(row);
+        }
+        if group == "Ajustes rápidos" {
+            return body;
         }
         Self::card(
             if group == "Ruído e AA" {

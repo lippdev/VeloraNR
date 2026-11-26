@@ -27,10 +27,15 @@ pub struct Motion {
     requested: u32,
     stopping: Option<Instant>,
     pub status: String,
+    pub applied_multiplier: u32,
 }
 
 impl Motion {
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().map(Child::id)
+    }
     fn start(&mut self, root: &Path, hwnd: isize, multiplier: u32) -> Result<(), String> {
+        self.applied_multiplier = 0;
         let exe = engine().ok_or("Motor Super Motion ausente no pacote do VeloraNR.")?;
         if hwnd == 0 {
             return Err("Janela de vídeo indisponível.".into());
@@ -64,6 +69,8 @@ impl Motion {
                 }
             }
         });
+        unsafe { super::portal_motion_pid(child.id()) };
+        super::session_event(&format!("super-motion pid={}", child.id()));
         self.child = Some(child);
         self.lines = Some(rx);
         Ok(())
@@ -84,6 +91,13 @@ impl Motion {
         let before = self.status.clone();
         if let Some(lines) = self.lines.as_ref().filter(|_| self.stopping.is_none()) {
             for line in lines.try_iter() {
+                if line.starts_with("@fps ")
+                    || line.starts_with("@mfg ")
+                    || line.starts_with("@error ")
+                    || line.starts_with("@source ")
+                {
+                    super::session_event(&format!("super-motion {line}"));
+                }
                 let mut parts = line.split_whitespace();
                 match parts.next() {
                     Some("@fps") if !self.status.starts_with("Falha") => {
@@ -94,9 +108,14 @@ impl Motion {
                             };
                         }
                     }
+                    Some("@mfg") if !line.contains("unavailable") => {
+                        self.applied_multiplier =
+                            parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                    }
                     Some("@error") | Some("@mfg")
-                        if line.starts_with("@error") || line == "@mfg unavailable" =>
+                        if line.starts_with("@error") || line.starts_with("@mfg unavailable") =>
                     {
+                        self.applied_multiplier = 0;
                         self.status =
                             format!("Falha no Super Motion · {}", line.trim_start_matches('@'))
                     }
@@ -116,6 +135,8 @@ impl Motion {
                     self.status =
                         "Super Motion encerrou. Desative e ative para tentar novamente.".into();
                 }
+                self.applied_multiplier = 0;
+                unsafe { super::portal_motion_pid(0) };
                 self.child = None;
                 self.lines = None;
             }
