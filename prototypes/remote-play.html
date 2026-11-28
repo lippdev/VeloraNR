@@ -29,9 +29,9 @@ aside button[aria-current=page]{background:#ffffff18;box-shadow:var(--rim),0 2px
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #c1d7fa;outline-offset:3px}
 dialog{width:min(360px,90vw);padding:24px;border:1px solid #ffffff25;border-radius:18px;background:#26272bee;box-shadow:var(--rim),0 24px 70px #0008;backdrop-filter:blur(16px)}
 dialog::backdrop{background:#05060994}dialog h3{margin-bottom:15px}dialog input{width:100%;background:#16171a;border:1px solid #ffffff35;border-radius:8px;padding:10px;color:white}
-@keyframes enter-panel{from{opacity:.4;transform:translateY(4px)}}
+
 @keyframes enter-dialog{from{opacity:0;transform:translateY(5px) scale(.985)}}
-@media(prefers-reduced-motion:no-preference){main.enter>header,main.enter section{animation:enter-panel 170ms var(--ease)}dialog[open]{animation:enter-dialog 170ms var(--ease)}}
+@media(prefers-reduced-motion:no-preference){dialog[open]{animation:enter-dialog 170ms var(--ease)}}
 @media(prefers-reduced-motion:reduce){button,.switch:before{transition:none}button:active{transform:none}}
 
 #pair-dialog{width:min(510px,94vw);max-height:calc(100% - 32px);padding:26px}
@@ -106,6 +106,35 @@ aside strong {letter-spacing:-.03em}
 #sub:empty{display:none}
 @keyframes reveal-settings{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:no-preference){details[open]>.disclosure-body, #setup details[open]>p{animation:reveal-settings 180ms var(--ease)}}
+/* Shared interaction and reading rhythm for the five views. */
+main>header{margin-bottom:24px}
+main>header p{margin:6px 0 0}
+main h1{line-height:1.12;text-wrap:balance}
+main h1:focus:not(:focus-visible){outline:none}
+.effect-panels summary:focus-visible,#setup summary:focus-visible{outline:2px solid #c1d7fa;outline-offset:-4px;border-radius:8px}
+.effect-panels summary{list-style:none;display:flex;align-items:center;gap:12px}
+.effect-panels summary::-webkit-details-marker{display:none}
+.effect-panels summary::after{content:"";margin-left:auto;width:7px;height:7px;border:solid #a6a8ad;border-width:0 1.5px 1.5px 0;transform:rotate(-45deg)}
+.effect-panels details[open]>summary::after{transform:rotate(45deg)}
+.effect-panels .row>span:first-child,.host>div,.identity h2{overflow-wrap:anywhere}
+.network .host>div{min-width:0}
+.status{font-variant-numeric:tabular-nums}
+.row:has([data-setting="fg.mode"]){align-items:flex-start;flex-direction:column;gap:6px}
+.effect-panels .row select[data-setting="fg.mode"]{max-width:100%;width:min(100%,340px)}
+.effect-panels .range input{min-height:28px}
+@media(max-width:610px){
+  #app aside{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:12px;border-bottom:1px solid var(--edge)}
+  aside strong{grid-column:1/-1;width:auto;margin:0 6px 6px}
+  aside button{min-width:0;justify-content:flex-start;white-space:normal;gap:5px}
+  .effect-panels .row{margin-inline:14px;gap:8px}
+  .row select,.effect-panels .range{max-width:55%}
+  .effect-panels .range input{width:100%;min-width:0}
+  .network .heading{gap:8px}
+  .network .heading button{margin-left:0}
+  .identity h2{line-height:1.2}
+  #setup .steps{flex-wrap:wrap;margin-right:34px}
+  #setup input{font-size:16px}
+}
 </style>
 <div id="app" class="unpaired"><aside><strong><i data-i="brand"></i>VeloraNR</strong><button aria-current="page" data-page="0"><i data-i="home"></i>Visão geral</button><button data-page="1"><i data-i="sliders"></i>Qualidade de imagem</button><button data-page="3"><i data-i="sliders"></i>DLSS 5</button><button data-page="4"><i data-i="play"></i>Frame Generation</button><button data-page="2"><i data-i="gear"></i>Configurações</button><small>v0.1.0</small></aside>
 <main data-view="overview"><header><h1 tabindex="-1">Remote Play</h1><p id="sub">Conecte-se ao seu PlayStation 5.</p></header><div class="cards">
@@ -171,14 +200,20 @@ all('[data-page]').forEach(button => {
     q('#fg-panel').hidden = index !== 4;
     say('');
     q('main h1').focus({preventScroll:true});
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      main.getAnimations().forEach(animation => animation.cancel());
-      main.animate([{opacity:.7,transform:'translateY(3px)'},{opacity:1,transform:'none'}],
-        {duration:160,easing:'cubic-bezier(.2,.8,.2,1)'});
-    }
+
   };
 });
-let live=false;q('#connect').onclick=()=>{if(!address){openPair();return} live=!live;q('#connect span').textContent=live?'Desconectar':'Conectar';q('#state').textContent=live?'Sessão simulada':'Vinculado · Ligado'};q('#wake').onclick=()=>say('O console de demonstração já está ligado.');q('#scan').onclick=()=>{say('Buscando…');setTimeout(()=>say('Busca simulada concluída.'),500)};
+let live=false;q('#connect').onclick=()=>{if(!address){openPair();return} live=!live;q('#connect span').textContent=live?'Desconectar':'Conectar';q('#state').textContent=live?'Sessão simulada':'Vinculado · Ligado'};q('#wake').onclick=()=>say('O console de demonstração já está ligado.');q('#scan').onclick = () => {
+  const scan = q('#scan');
+  scan.disabled = true;
+  scan.setAttribute('aria-busy','true');
+  say('Buscando consoles na rede…');
+  setTimeout(() => {
+    scan.disabled = false;
+    scan.removeAttribute('aria-busy');
+    say(address ? '1 console vinculado encontrado.' : 'Busca simulada concluída.');
+  },500);
+};
 const app = q('#app'), setup = q('#setup');
 const demoAddress = '192.168.0.114', storageKey = 'veloranr.prototype.console';
 const validIp = value => /^\d{1,3}(\.\d{1,3}){3}$/.test(value) && value.split('.').every(n => +n <= 255);
@@ -485,6 +520,7 @@ const qualitySchema = {"Super-resolução": [["sr", "Ativar upscale", 0.0, 1.0, 
     ["beautyDetection.maxFaces", "Máximo de rostos", 1.0, 8.0, 4.0, 1.0]]};
 const choiceLabels = {
   lowLatency: ['Depois do upscaling', 'Antes do upscaling'],
+  nrReuse: ['Desligada','Automática','A cada 2 quadros','A cada 3 quadros','A cada 4 quadros'],
   nrMotion: ['Sem movimento', 'Fluxo óptico', 'Automático'],
   srMotion: ['Sem movimento', 'Fluxo óptico', 'Automático'],
   srTarget: ['1440p · QHD', '2160p · UHD'],
@@ -495,7 +531,7 @@ const choiceLabels = {
 };
 const settingNames = {
   nr:'Ativar DLSS 5', lowLatency:'Ordem do processamento', nrLayerCount:'Camadas de DLSS NR',
-  nrMotion:'Fonte de movimento', srMotion:'Fonte de movimento', srTarget:'Resolução de saída',
+  nrHoldStrength:'Estabilização', nrHoldThreshold:'Tolerância', nrReuse:'Reutilização de quadros', nrMotion:'Fonte de movimento', srMotion:'Fonte de movimento', srTarget:'Resolução de saída',
   videoSrQuality:'Algoritmo', 'antiAlias.enabled':'Reduzir serrilhado',
   'antiAlias.method':'Método', 'antiAlias.quality':'Qualidade', 'antiAlias.temporal':'Acumulação temporal'
 };
