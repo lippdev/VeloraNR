@@ -139,16 +139,36 @@ impl Portal {
         }
     }
 
+    fn popup(menu: Div, cx: &Context<Self>) -> Div {
+        div().absolute().right_0().top_full().child(
+            deferred(
+                anchored()
+                    .anchor(Corner::TopRight)
+                    .snap_to_window_with_margin(px(4.))
+                    .child(
+                        menu.min_w(px(144.))
+                            .shadow_lg()
+                            .occlude()
+                            .on_mouse_down_out(cx.listener(|p, _, _, cx| {
+                                p.setting_menu = None;
+                                p.bitrate_menu_open = false;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .with_priority(2),
+        )
+    }
+
     pub(super) fn quick_panel(&self, cx: &Context<Self>) -> impl IntoElement {
         div()
             .id("quick-settings")
-            .w(px(QUICK_WIDTH as f32 - 14.))
+            .w_full()
             .h_full()
             .flex_shrink_0()
             .overflow_y_scroll()
             .bg(rgb(PANEL))
-            .rounded_xl()
-            .border_1()
+            .border_r_1()
             .border_color(rgb(BORDER))
             .px_4()
             .py_4()
@@ -163,6 +183,16 @@ impl Portal {
                             .items_center()
                             .justify_between()
                             .child(Self::heading("Ajustes rápidos"))
+                            .child(
+                                Self::button(
+                                    9115,
+                                    if self.pinned { "Soltar" } else { "Fixar" },
+                                    Action::PinQuick,
+                                    cx,
+                                )
+                                .text_xs()
+                                .py_1(),
+                            )
                             .child(
                                 Self::button(9102, "Fechar", Action::CloseQuick, cx)
                                     .text_xs()
@@ -460,7 +490,6 @@ impl Portal {
                     Action::SettingMenu(i),
                     cx,
                 ));
-                body = body.child(row);
                 if self.setting_menu == Some(i) {
                     let mut menu = div()
                         .flex()
@@ -478,8 +507,9 @@ impl Portal {
                             cx,
                         ));
                     }
-                    body = body.child(menu);
+                    row = row.child(Self::popup(menu, cx));
                 }
+                body = body.child(row.relative());
                 continue;
             } else {
                 let display = if field.step >= 1. {
@@ -748,7 +778,7 @@ impl Portal {
                 cx,
             ));
         }
-        let mut body = div().flex().flex_col().gap_2().child(bitrate);
+
         if self.bitrate_menu_open {
             let mut menu = div().flex().flex_col().border_1().border_color(rgb(BORDER));
             for (i, value) in BITRATES.into_iter().enumerate() {
@@ -775,8 +805,9 @@ impl Portal {
                         ),
                 );
             }
-            body = body.child(menu);
+            bitrate = bitrate.child(Self::popup(menu, cx));
         }
+        let mut body = div().flex().flex_col().gap_2().child(bitrate.relative());
         for (path, label) in [("nr", "DLSS 5"), ("multiplier", "Frame Generation")] {
             if let Some(i) = self.fields.iter().position(|f| f.path == path) {
                 let enabled = self.values[i] > if path == "multiplier" { 1. } else { 0. };
