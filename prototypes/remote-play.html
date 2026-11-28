@@ -102,6 +102,10 @@ aside strong {letter-spacing:-.03em}
 .effect-panels .range{display:flex;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
 .effect-panels .range input{padding:0;accent-color:#b1dbbe}
 .effect-panels output{min-width:40px;text-align:right}
+#dismiss{display:grid;place-items:center;padding:0}
+#sub:empty{display:none}
+@keyframes reveal-settings{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:no-preference){details[open]>.disclosure-body, #setup details[open]>p{animation:reveal-settings 180ms var(--ease)}}
 </style>
 <div id="app" class="unpaired"><aside><strong><i data-i="brand"></i>VeloraNR</strong><button aria-current="page" data-page="0"><i data-i="home"></i>Visão geral</button><button data-page="1"><i data-i="sliders"></i>Qualidade de imagem</button><button data-page="3"><i data-i="sliders"></i>DLSS 5</button><button data-page="4"><i data-i="play"></i>Frame Generation</button><button data-page="2"><i data-i="gear"></i>Configurações</button><small>v0.1.0</small></aside>
 <main data-view="overview"><header><h1 tabindex="-1">Remote Play</h1><p id="sub">Conecte-se ao seu PlayStation 5.</p></header><div class="cards">
@@ -111,7 +115,7 @@ aside strong {letter-spacing:-.03em}
 <div class="effect-panels" id="dlss-panel" hidden></div>
 <div class="effect-panels" id="fg-panel" hidden></div>
 <section class="network"><div class="heading"><i data-i="screen"></i><h3>Consoles na rede</h3><button id="scan"><i data-i="refresh"></i>Buscar novamente</button></div><article><p id="empty-network" hidden>Nenhum PS5 encontrado na rede.</p><div class="host"><i data-i="pad"></i><div><b>192.168.0.114</b><p><b class="dot"></b>Ligado</p></div><span class="tag">Pareado</span></div><button id="add">＋ Adicionar por IP</button></article></section><p class="status" role="status"></p></main></div>
-<dialog id="pair-dialog" aria-label="Vincular console"><button type="button" id="dismiss" aria-label="Fechar">×</button><div id="setup"></div></dialog>
+<dialog id="pair-dialog" aria-label="Vincular console"><button type="button" id="dismiss" aria-label="Fechar"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m4 4 8 8m0-8-8 8"/></svg></button><div id="setup"></div></dialog>
 <script>
 const q=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
 const controllerIcon = `<svg class="dualsense" aria-hidden="true" viewBox="0 0 96 64">
@@ -142,10 +146,10 @@ document.addEventListener('click', event => {
 const say=t=>q('.status').textContent=t;
 const pages = [
   ['overview', 'Remote Play', 'Conecte-se ao seu PlayStation 5.'],
-  ['quality', 'Qualidade de imagem', 'Ajuste a transmissão e o processamento da imagem.'],
+  ['quality', 'Qualidade de imagem', ''],
   ['settings', 'Configurações', 'Encontre e vincule seu PlayStation 5 pela rede local.'],
-  ['dlss', 'DLSS 5', 'Configure o processamento neural antes ou depois do upscaling.'],
-  ['fg', 'Frame Generation', 'Escolha o método de interpolação e o multiplicador.']
+  ['dlss', 'DLSS 5', 'Para reduzir o trabalho da GPU, aplique o DLSS antes do upscaling.'],
+  ['fg', 'Frame Generation', '']
 ];
 const main = q('main');
 all('[data-page]').forEach(button => {
@@ -504,7 +508,10 @@ function addSection(parent, title, open) {
   detail.append(heading);
   card.append(detail);
   q(parent).append(card);
-  return detail;
+  const body = document.createElement('div');
+  body.className = 'disclosure-body';
+  detail.append(body);
+  return body;
 }
 function settingRow(group, label) {
   const row = document.createElement('label');
@@ -565,6 +572,7 @@ function renderQualityGroup(parent, title, fields, open = false) {
       }
     }
   });
+  return group.closest('section');
 }
 const noiseAA = qualitySchema['Ruído e AA'];
 renderQualityGroup('#effects','Antisserrilhamento',noiseAA.filter(([key])=>key.startsWith('antiAlias.')),true);
@@ -572,14 +580,23 @@ renderQualityGroup('#effects','Redução de ruído',noiseAA.filter(([key])=>key.
 for (const group of ['Super-resolução','HDR','Proteção NR','Exclusão de efeitos','Beleza']) {
   renderQualityGroup('#effects',group,qualitySchema[group]);
 }
-renderQualityGroup('#dlss-panel','Processamento neural',qualitySchema['DLSS NR'],true);
+const neural = qualitySchema['DLSS NR'];
+const essentials = new Set(['nr','lowLatency','nrLayers[0].sizePolicy','nrLayers[0].model.intensity']);
+for (let i = 0; i < 4; i++) {
+  const key = 'nrLayers[' + i + '].sizePolicy';
+  settingNames[key] = 'Resolução de processamento';
+  choiceLabels[key] = ['1080p','Nativa','480p','720p','900p','1440p'];
+}
+renderQualityGroup('#dlss-panel','Ajustes principais',[...neural,...qualitySchema['Camada NR 1']].filter(([key])=>essentials.has(key)),true);
+renderQualityGroup('#dlss-panel','Processamento avançado',neural.filter(([key])=>!essentials.has(key)));
+const layerCards = [];
 for (let layer = 1; layer <= 4; layer++) {
   const group = 'Camada NR ' + layer;
-  renderQualityGroup('#dlss-panel',group,qualitySchema[group],layer === 1);
+  layerCards.push(renderQualityGroup('#dlss-panel','Detalhes da camada ' + layer,qualitySchema[group].filter(([key])=>!essentials.has(key))));
 }
 const layerCount = q('[data-setting="nrLayerCount"]');
 layerCount.oninput = () => {
-  all('#dlss-panel section').slice(1).forEach((card,index)=>card.hidden=index >= +layerCount.value);
+  layerCards.forEach((card,index)=>card.hidden=index >= +layerCount.value);
 };
 layerCount.oninput();
 
@@ -611,7 +628,7 @@ const backends = [
   ['xmx','XeFG XMX (experimental)',6], ['fsr3','AMD FSR 3.1',2], ['fsr4','AMD FSR 4 ML',2],
   ['amdfrc','AMD FRC',2], ['rife','RIFE',3]
 ];
-const mode = selectSetting(settingRow(fgGroup,'Modo de aplicação'),'fg.mode',[['internal','Interno'],['capture','Captura Next Boost']],'internal');
+const mode = selectSetting(settingRow(fgGroup,'Modo de aplicação'),'fg.mode',[['internal','Interno (Recomendado para High End PC)'],['capture','Externo (Recomendado para Low End PC)']],'internal');
 const backend = selectSetting(settingRow(fgGroup,'Gerador'),'fg.backend',backends,'vfg');
 const multiplier = selectSetting(settingRow(fgGroup,'Multiplicador'),'fg.multiplier',[],'');
 const motion = selectSetting(settingRow(fgGroup,'Fonte de movimento'),'fg.motion',
@@ -633,7 +650,8 @@ function updateFG() {
     xess:'2× nativo. 3× e 4× dependem do runtime experimental.',
     vfg:'6× a 8× são opções experimentais. A taxa atingida depende do hardware.',
     dlss:'As opções disponíveis no app dependem da GPU e do runtime DLSS.'
-  }[backend.value] || 'A disponibilidade depende da GPU e do runtime.';
+  }[backend.value] || (mode.value === 'capture' ? 'O Next Boost captura o vídeo processado pelo VeloraNR.' : '');
+  fgNote.hidden = !fgNote.textContent;
 }
 function updateMode() {
   const choices = mode.value === 'capture' ? backends.slice(0,3) : backends.slice(3);
