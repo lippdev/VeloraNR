@@ -71,6 +71,7 @@ enum Action {
     CaptureCadence,
     OpenReport,
     CloseQuick,
+    PinQuick,
     Fullscreen,
     Login,
     Scan,
@@ -106,6 +107,8 @@ struct Portal {
     report: Option<PathBuf>,
     capture_message: String,
     quick_open: bool,
+    pinned: bool,
+    leave_at: Option<std::time::Instant>,
     previous_x: i32,
     previous_multiplier: f32,
     bitrate_menu_open: bool,
@@ -218,26 +221,29 @@ impl Portal {
                             let playing = p.page == Page::Stream && matches!(p.status, 2..=3);
                             if playing {
                                 let x = unsafe { portal_pointer_x(p.media.0) };
-                                if x != p.previous_x {
-                                    let open = if p.quick_open {
-                                        (0..QUICK_WIDTH + 20).contains(&x)
-                                    } else {
-                                        (0..EDGE).contains(&x) && !(0..EDGE).contains(&p.previous_x)
-                                    };
-                                    p.previous_x = x;
-                                    if open != p.quick_open {
-                                        session_event(if open {
-                                            "panel=open"
-                                        } else {
-                                            "panel=closed"
-                                        });
-                                        p.quick_open = open;
-                                        p.setting_menu = None;
-                                        cx.notify();
-                                    }
+                                let open = if p.pinned || p.setting_menu.is_some() {
+                                    p.leave_at = None;
+                                    true
+                                } else if p.quick_open && !(0..QUICK_WIDTH + 10).contains(&x) {
+                                    p.leave_at
+                                        .get_or_insert_with(std::time::Instant::now)
+                                        .elapsed()
+                                        < std::time::Duration::from_millis(650)
+                                } else {
+                                    p.leave_at = None;
+                                    p.quick_open
+                                        || ((0..EDGE).contains(&x)
+                                            && !(0..EDGE).contains(&p.previous_x))
+                                };
+                                p.previous_x = x;
+                                if open != p.quick_open {
+                                    p.quick_open = open;
+                                    cx.notify();
                                 }
                             } else {
                                 p.quick_open = false;
+                                p.pinned = false;
+                                p.leave_at = None;
                                 p.previous_x = -1;
                             }
                             unsafe {
@@ -247,14 +253,18 @@ impl Portal {
                                     QUICK_WIDTH,
                                     if !p.quick_open && !p.feedback_text.is_empty() {
                                         48
-                                    } else if p.setting_menu.is_some() {
-                                        680
                                     } else {
-                                        560
+                                        0
                                     },
                                 )
                             };
-                            let sidebar = if playing { 0 } else { SIDEBAR };
+                            let sidebar = if playing && p.pinned {
+                                QUICK_WIDTH
+                            } else if playing {
+                                0
+                            } else {
+                                SIDEBAR
+                            };
                             let state = unsafe {
                                 portal_tick(
                                     p.media.0,
@@ -347,6 +357,8 @@ impl Portal {
             report: None,
             capture_message: String::new(),
             quick_open: false,
+            pinned: false,
+            leave_at: None,
             previous_x: -1,
             previous_multiplier: 2.,
             bitrate_menu_open: false,
@@ -472,13 +484,18 @@ impl Portal {
                     cx.open_with_system(dir);
                 }
             }
+            Action::PinQuick => {
+                self.pinned = !self.pinned;
+                self.leave_at = None;
+            }
             Action::CloseQuick => {
+                self.pinned = false;
                 self.quick_open = false;
                 self.focus.focus(w);
             }
             Action::Fullscreen => {
                 w.toggle_fullscreen();
-                self.quick_open = false;
+                self.quick_open = self.pinned;
                 self.focus.focus(w);
             }
             Action::SettingMenu(i) => {
@@ -674,6 +691,7 @@ impl Portal {
                 "escape" if self.quick_open => self.act(Action::CloseQuick, window, cx),
                 "escape" if window.is_fullscreen() => self.act(Action::Fullscreen, window, cx),
                 "f10" => {
+                    self.pinned = false;
                     self.quick_open = !self.quick_open;
                     self.setting_menu = None;
                     cx.notify();
@@ -897,7 +915,8 @@ impl Render for Portal {
                 .when(!self.quick_open && !self.feedback_text.is_empty(), |d| {
                     d.child(
                         div()
-                            .size_full()
+                            .w_full()
+                            .h(px(48.))
                             .flex()
                             .items_center()
                             .px_4()

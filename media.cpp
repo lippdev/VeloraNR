@@ -14,7 +14,7 @@ using namespace veyra;
 struct Player {
     HWND parent, video, panel=nullptr;
     double reveal=0;
-    int clipWidth=0;
+    int clipHeight=0, clipWidth=0;
     ULONGLONG lastPanelTick=0, lastSample=0;
     bool panelWanted=false, animations=true, panelToast=false;
     engine::EngineController engine;
@@ -128,22 +128,19 @@ API void portal_panel(Player* p,bool wanted,int width,int height){
     GetClientRect(p->parent,&client);ClientToScreen(p->parent,&origin);
     const int dpi=GetDpiForWindow(p->parent);
     auto scale=[dpi](int v){return MulDiv(v,dpi,96);};
-    int gap=scale(10);
-    int w=std::clamp<int>(scale(width),1,std::max<int>(1,client.right-2*gap));
-    int h=std::clamp<int>(scale(height),1,std::max<int>(1,client.bottom-2*gap));
-    int x=origin.x+int(gap*p->reveal), y=origin.y+gap+int((1-p->reveal)*scale(10));
+    int w=std::clamp<int>(scale(width),1,std::max<LONG>(1,client.right));
+    int h=client.bottom;
+    int clipHeight=toast?std::min<LONG>(scale(height),h):h;
+    int x=origin.x, y=origin.y;
     GetWindowRect(p->panel,&old);
     bool resized=old.right-old.left!=w||old.bottom-old.top!=h;
-    int visibleWidth=std::max(1,int(std::round(w*(0.92+0.08*p->reveal))));
-    if(resized||visibleWidth!=p->clipWidth){
-        POINT clientOrigin{};RECT inner{};
-        ClientToScreen(p->panel,&clientOrigin);GetClientRect(p->panel,&inner);
-        int left=std::max(0L,clientOrigin.x-old.left), top=std::max(0L,clientOrigin.y-old.top);
-        int right=std::max(0L,old.right-old.left-inner.right-left);
-        int bottom=std::max(0L,old.bottom-old.top-inner.bottom-top);
-        auto region=CreateRoundRectRgn(left,top,visibleWidth-right+1,h-bottom+1,scale(24),scale(24));
-        if(region&&!SetWindowRgn(p->panel,region,TRUE))DeleteObject(region);
+    // Reveal by clipping the stable client surface, including across toast transitions.
+    int visibleWidth=std::max(1,int(std::round(w*p->reveal)));
+    if(resized||visibleWidth!=p->clipWidth||clipHeight!=p->clipHeight){
+        auto region=CreateRectRgn(0,0,visibleWidth,clipHeight);
+        if(region&&!SetWindowRgn(p->panel,region,FALSE))DeleteObject(region);
         p->clipWidth=visibleWidth;
+        p->clipHeight=clipHeight;
     }
     bool raise=!IsWindowVisible(p->panel);
     // A rebuilt FG output may have appeared above the panel.
