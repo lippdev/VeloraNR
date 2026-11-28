@@ -298,8 +298,12 @@ impl Portal {
             let value = self.values[i];
             let applicable = match field.path {
                 _ if group == "Frame Generation" && backend >= super_motion::FIRST_EXTERNAL => {
-                    matches!(field.path, "frameGenerationBackend" | "multiplier")
+                    matches!(
+                        field.path,
+                        "frameGenerationBackend" | "multiplier" | "finalFpsOnly"
+                    )
                 }
+                "finalFpsOnly" => backend >= super_motion::FIRST_EXTERNAL,
                 "vfgQuality" | "vfgAutoRegulate" => backend == 4,
                 "fgMotion" => !matches!(backend, 4 | 6 | 7),
                 "hudLock" => backend != 1,
@@ -363,6 +367,14 @@ impl Portal {
                         "RIFE",
                         "XeFG XMX",
                     ],
+                ),
+                "nrRuntime" => (
+                    "DLL do DLSS 5",
+                    &["Otimizada · RTX 20, 30 e 40", "Original do pacote · RTX 50"],
+                ),
+                "finalFpsOnly" => (
+                    "Contador de FPS",
+                    &["Real / saída com geração", "Somente FPS final"],
                 ),
                 "fgMotion" | "nrMotion" | "srMotion" => (
                     "Fonte de movimento",

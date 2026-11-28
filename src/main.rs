@@ -209,6 +209,10 @@ impl Portal {
             .iter()
             .position(|f| f.path == "frameGenerationBackend")
             .unwrap();
+        let fps_index = fields
+            .iter()
+            .position(|f| f.path == "finalFpsOnly")
+            .unwrap();
         let multiplier_index = fields.iter().position(|f| f.path == "multiplier").unwrap();
         cx.spawn(async move |this, cx| {
             loop {
@@ -249,13 +253,16 @@ impl Portal {
                             unsafe {
                                 portal_panel(
                                     p.media.0,
-                                    playing && (p.quick_open || !p.feedback_text.is_empty()),
-                                    QUICK_WIDTH,
-                                    if !p.quick_open && !p.feedback_text.is_empty() {
-                                        48
+                                    playing
+                                        && (p.quick_open
+                                            || !p.feedback_text.is_empty()
+                                            || p.motion.final_fps.is_some()),
+                                    if !p.quick_open && p.feedback_text.is_empty() {
+                                        100
                                     } else {
-                                        0
+                                        QUICK_WIDTH
                                     },
+                                    if !p.quick_open { 48 } else { 0 },
                                 )
                             };
                             let sidebar = if playing && p.pinned {
@@ -295,6 +302,7 @@ impl Portal {
                                 hwnd,
                                 if hwnd == 0 { 0 } else { wanted },
                                 p.values[backend_index] as u32,
+                                p.values[fps_index] > 0.,
                             ) {
                                 cx.notify();
                             }
@@ -909,22 +917,32 @@ impl Render for Portal {
                 .font_family("Instrument Sans")
                 .bg(rgb(BACKGROUND))
                 .text_color(rgb(TEXT))
-                .when(self.quick_open || self.feedback_text.is_empty(), |d| {
-                    d.child(self.quick_panel(cx))
-                })
-                .when(!self.quick_open && !self.feedback_text.is_empty(), |d| {
-                    d.child(
-                        div()
-                            .w_full()
-                            .h(px(48.))
-                            .flex()
-                            .items_center()
-                            .px_4()
-                            .bg(rgb(PANEL))
-                            .text_sm()
-                            .child(self.feedback_text.clone()),
-                    )
-                })
+                .when(
+                    self.quick_open
+                        || (self.feedback_text.is_empty() && self.motion.final_fps.is_none()),
+                    |d| d.child(self.quick_panel(cx)),
+                )
+                .when(
+                    !self.quick_open
+                        && (!self.feedback_text.is_empty() || self.motion.final_fps.is_some()),
+                    |d| {
+                        d.child(
+                            div()
+                                .w_full()
+                                .h(px(48.))
+                                .flex()
+                                .items_center()
+                                .px_4()
+                                .bg(rgb(PANEL))
+                                .text_sm()
+                                .child(if self.feedback_text.is_empty() {
+                                    format!("{} FPS", self.motion.final_fps.unwrap_or(0))
+                                } else {
+                                    self.feedback_text.clone()
+                                }),
+                        )
+                    },
+                )
                 .into_any_element();
         }
         self.fullscreen = window.is_fullscreen();

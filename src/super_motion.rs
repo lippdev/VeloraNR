@@ -45,6 +45,8 @@ pub struct Motion {
     config_file: Option<PathBuf>,
     lines: Option<Receiver<String>>,
     requested: u32,
+    final_only: bool,
+    pub final_fps: Option<u32>,
     backend: u32,
     stopping: Option<Instant>,
     pub status: String,
@@ -72,12 +74,13 @@ impl Motion {
         let cfg = root.join(format!("super-motion-{}.cfg", std::process::id()));
         let options = concat!(
             "mfg=1\nratio=0\nadaptive=0\nqueue=1\nstill=1\n",
-            "msm_ai=0\nmsm_search=1\ngpu=-1\nsync=1\ncounter=1\n",
+            "msm_ai=0\nmsm_search=1\ngpu=-1\nsync=1\n",
             "upscaler=0\ncapture_api=1\nwindow_mode=2\nsource=0\ndelay=0\n"
         );
+        let counter = u32::from(!self.final_only);
         let owner = std::process::id();
         let config = format!(
-            "hwnd={hwnd}\nowner={owner}\nmultiplier={multiplier}\ngenerator={code}\nmsm_tri={triangles}\n{options}"
+            "counter={counter}\nhwnd={hwnd}\nowner={owner}\nmultiplier={multiplier}\ngenerator={code}\nmsm_tri={triangles}\n{options}"
         );
         fs::write(&cfg, config).map_err(|e| e.to_string())?;
         self.config_file = Some(cfg.clone());
@@ -115,8 +118,16 @@ impl Motion {
     }
 
     // Called on the session tick. Wait for the previous overlay to leave before reopening.
-    pub fn tick(&mut self, root: &Path, hwnd: isize, wanted: u32, backend: u32) -> bool {
-        let changed = self.requested != wanted || (wanted > 0 && backend != self.backend);
+    pub fn tick(
+        &mut self,
+        root: &Path,
+        hwnd: isize,
+        wanted: u32,
+        backend: u32,
+        final_only: bool,
+    ) -> bool {
+        let changed = self.requested != wanted
+            || (wanted > 0 && (backend != self.backend || final_only != self.final_only));
         if self.child.is_none() && !changed {
             return false;
         }
@@ -134,6 +145,11 @@ impl Motion {
                 match parts.next() {
                     Some("@fps") if !self.status.starts_with("Falha") => {
                         if let (Some(base), Some(out)) = (parts.next(), parts.next()) {
+                            self.final_fps = if self.final_only {
+                                out.parse().ok()
+                            } else {
+                                None
+                            };
                             self.status = match (base.parse::<u32>(), out.parse::<u32>()) {
                                 (Ok(base), Ok(out)) => format!("Next Boost · {base} → {out} FPS"),
                                 _ => "Next Boost · aguardando quadros".into(),
@@ -147,6 +163,7 @@ impl Motion {
                     Some("@error") | Some("@mfg")
                         if line.starts_with("@error") || line.starts_with("@mfg unavailable") =>
                     {
+                        self.final_fps = None;
                         self.applied_multiplier = 0;
                         self.status =
                             format!("Falha no Next Boost · {}", line.trim_start_matches('@'))
@@ -168,15 +185,18 @@ impl Motion {
                         "Next Boost encerrou. Desative e ative para tentar novamente.".into();
                 }
                 self.applied_multiplier = 0;
+                self.final_fps = None;
                 unsafe { super::portal_motion_pid(0) };
                 self.child = None;
                 self.lines = None;
             }
         }
         if changed {
+            self.final_fps = None;
             self.stop();
             if self.child.is_none() || wanted == 0 {
                 self.requested = wanted;
+                self.final_only = final_only;
                 self.backend = backend;
                 self.status = if wanted == 0 {
                     String::new()
@@ -226,10 +246,10 @@ mod tests {
     #[test]
     fn missing_capture_target_never_starts_a_picker() {
         let mut motion = Motion::default();
-        assert!(motion.tick(Path::new("."), 0, 4, 9));
+        assert!(motion.tick(Path::new("."), 0, 4, 9, false));
         assert!(motion.child.is_none());
-        assert!(!motion.tick(Path::new("."), 0, 4, 9));
-        assert!(motion.tick(Path::new("."), 0, 0, 9));
+        assert!(!motion.tick(Path::new("."), 0, 4, 9, false));
+        assert!(motion.tick(Path::new("."), 0, 0, 9, false));
         assert!(motion.status.is_empty());
     }
 }

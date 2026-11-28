@@ -16,6 +16,10 @@ A camada nativa atual usa Chiaki, FFmpeg, SDL e o motor D3D12 em C++. O reposit�
 
 O Remote Play foi verificado com um PS5 já vinculado. A sessão confirmou DLSS NR antes do upscaling, MLAA, XeSS FG 2× e NVIDIA VFG 2× e 4×. O primeiro vínculo com um novo código e o despertar do console em repouso ainda precisam de validação ao vivo.
 
+Na aba **DLSS 5**, escolha a DLL otimizada para RTX 20, 30 e 40 ou a original do pacote, recomendada para RTX 50. O empacotador espera o arquivo local `nvngx_dlssnr.dll` nas pastas `runtime/experimental/nr-ampere` e `runtime/experimental/nr-original` de RuntimeAssets.
+
+Em **Frame Generation → Captura Next Boost → Contador de FPS**, o modo detalhado usa o contador do motor. **Somente FPS final** mostra a taxa de saída medida pelo Next Boost, atualizada durante a transmissão.
+
 ## Frame Generation por captura (Next Boost)
 
 Para incluir o motor e os pacotes NVIDIA e Intel instalados nessa pasta no pacote local, passe também `-SuperMotionEngine 'C:/caminho/framegen/engine'` ao script. O VeloraNR usa sua própria cópia do núcleo. Na aba **Frame Generation**, selecione **Captura Next Boost**, o gerador **Super Motion (SMFG)**, **NVIDIA DLSS MFG** ou **Intel XeSS MFG** e o multiplicador de 2× a 6×. Durante o jogo, F11 alterna a tela cheia sem bordas. Encoste o mouse na extremidade esquerda do player para abrir **Ajustes rápidos** e volte ao vídeo para recolher o painel. Em **Frame Gen**, escolha **Desligado** ou um multiplicador. O mesmo painel permite ajustar DLSS 5, antisserrilhamento e super-resolução enquanto a sessão continua. Ao sair da tela de streaming, a captura para. O contador informa as taxas observadas pelo motor. O DLSS NR continua sendo configurado na aba **DLSS 5**.

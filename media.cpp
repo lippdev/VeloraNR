@@ -211,7 +211,7 @@ API int portal_tick(Player* p,int sidebar,bool show){
 }
 API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
     try {
-        engine::EnhancementSettings q;
+        struct : engine::EnhancementSettings { int finalFpsOnly=0; } q;
         size_t i=0;
 #define FIELD(group,label,field,low,high,initial,step) \
         if(i>=count || !std::isfinite(values[i]) || values[i]<low || values[i]>high)return false; \
@@ -226,7 +226,7 @@ API bool portal_quality(Player* p,const float* values,size_t count) noexcept {
             q.frameGenerationBackend=engine::EnhancementSettings{}.frameGenerationBackend;
             q.multiplier=1;
         }
-        for(auto& layer:q.nrLayers){layer.lowLatencyPairing=q.lowLatency;layer.runtime=engine::NrRuntime::Ampere;}
+        for(auto& layer:q.nrLayers){layer.lowLatencyPairing=q.lowLatency;layer.runtime=q.nrRuntime;}
         const auto& first=q.nrLayers[0];
         q.nrPolicy=first.sizePolicy;q.model=first.model;q.residual=first.residual;q.nrTemporal=first.temporal;
         if(!p->engine.requestSettings(q))return false;

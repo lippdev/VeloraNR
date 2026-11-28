@@ -616,8 +616,9 @@ renderQualityGroup('#effects','Redução de ruído',noiseAA.filter(([key])=>key.
 for (const group of ['Super-resolução','HDR','Proteção NR','Exclusão de efeitos','Beleza']) {
   renderQualityGroup('#effects',group,qualitySchema[group]);
 }
-const neural = qualitySchema['DLSS NR'];
-const essentials = new Set(['nr','lowLatency','nrLayers[0].sizePolicy','nrLayers[0].model.intensity']);
+const neural = [...qualitySchema['DLSS NR'],['nrRuntime','DLL do DLSS 5',0,1,0,1]];
+choiceLabels.nrRuntime=['Otimizada · RTX 20, 30 e 40','Original do pacote · RTX 50'];
+const essentials = new Set(['nr','nrRuntime','lowLatency','nrLayers[0].sizePolicy','nrLayers[0].model.intensity']);
 for (let i = 0; i < 4; i++) {
   const key = 'nrLayers[' + i + '].sizePolicy';
   settingNames[key] = 'Resolução de processamento';
@@ -665,6 +666,8 @@ const backends = [
   ['amdfrc','AMD FRC',2], ['rife','RIFE',3]
 ];
 const mode = selectSetting(settingRow(fgGroup,'Modo de aplicação'),'fg.mode',[['internal','Interno (Recomendado para High End PC)'],['capture','Externo (Recomendado para Low End PC)']],'internal');
+const counterRow=settingRow(fgGroup,"Contador de FPS");
+selectSetting(counterRow,"fg.counter",[["both","Real / saída com geração"],["final","Somente FPS final"]],"both");
 const backend = selectSetting(settingRow(fgGroup,'Gerador'),'fg.backend',backends,'vfg');
 const multiplier = selectSetting(settingRow(fgGroup,'Multiplicador'),'fg.multiplier',[],'');
 const motion = selectSetting(settingRow(fgGroup,'Fonte de movimento'),'fg.motion',
@@ -690,6 +693,7 @@ function updateFG() {
   fgNote.hidden = !fgNote.textContent;
 }
 function updateMode() {
+  counterRow.hidden = mode.value !== "capture";
   const choices = mode.value === 'capture' ? backends.slice(0,3) : backends.slice(3);
   const previous = backend.value;
   backend.replaceChildren(...choices.map(([id,label]) => new Option(label,id)));

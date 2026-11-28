@@ -21,7 +21,7 @@ foreach ($name in 'avcodec-63.dll','avformat-63.dll','avutil-61.dll','avfilter-1
     $file = Join-Path $RuntimeAssets $name
     if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $Destination -Force }
 }
-foreach ($name in 'shaders','runtime/models','runtime/config','runtime/experimental/nr-ampere') {
+foreach ($name in 'shaders','runtime/models','runtime/config','runtime/experimental/nr-ampere','runtime/experimental/nr-original') {
     $dir = Join-Path $Destination $name
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     Get-ChildItem -LiteralPath (Join-Path $RuntimeAssets $name) | Copy-Item -Destination $dir -Recurse -Force
